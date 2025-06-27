@@ -1,0 +1,126 @@
+import subprocess
+import csv
+
+# Run the df -h command and capture its output
+df_output = subprocess.check_output(['df', '-h']).decode('utf-8')
+
+# Split the output into lines and extract the header and data
+lines = df_output.split('\n')
+header = lines[0].split()
+
+# Join "Mounted" and "On" into a single header with an underscore
+header[5:7] = ['_'.join(header[5:7])]
+
+data = [line.split() for line in lines[1:] if line]
+
+# Specify the CSV file path
+csv_file_path = 'df_output.csv'
+
+# Write the data to a CSV file
+with open(csv_file_path, 'w') as csv_file:
+    csv_writer = csv.writer(csv_file)
+
+    # Write the header
+    csv_writer.writerow(header)
+
+    # Write the data
+    csv_writer.writerows(data)
+
+#print(f"Data has been written to :{csv_file_path}")
+
+
+
+
+
+--this was created on Transcomm DB
+
+create user dev identified by dev;
+grant unlimited tablespace to dev;
+grant create session to dev;
+grant dba to dev;
+grant resource to dev;
+grant create external job to dev;
+grant create job to dev;
+grant alter tablespace to hp_diag;
+
+
+drop table dev.filesystem;
+create directory filesystem as '/apps/ora/home/charles';
+grant read on directory filesystem to dev;
+grant write on directory filesystem to dev;
+grant read on directory filesystem to hp_diag;
+grant write on directory filesystem to hp_diag;
+
+
+create table dev.filesystem
+(
+Filesystem varchar2(400),
+fsize varchar2(10),
+used varchar2(10),
+Avail varchar2(10),
+use_pcent varchar2(10),
+mounted_on varchar2(400))
+ORGANIZATION EXTERNAL (
+  DEFAULT DIRECTORY filesystem
+  ACCESS PARAMETERS (
+    RECORDS DELIMITED BY NEWLINE
+    SKIP 1
+    FIELDS TERMINATED BY ','
+    MISSING FIELD VALUES ARE NULL
+  )
+  LOCATION ('df_output.csv')
+)
+reject limit unlimited;
+
+
+--Query to match a datafile to its OS mounted filesystem
+--using this we can check how much space is left in the underlying OS filesystem before adding space to the tablespace
+
+SELECT
+    ext.Filesystem AS external_filesystem,
+    ext.fsize,
+    ext.used,
+    ext.Avail,
+    ext.use_pcent,
+    ext.mounted_on AS external_mounted_on,
+    df.tablespace_name,
+    df.file_name AS datafile_file_name,
+    df.bytes/1024/1024 AS size_MB,
+    df.autoextensible
+FROM
+    dev.filesystem ext
+JOIN
+    dba_data_files df
+ON
+    --df.file_name LIKE '%' || ext.mounted_on || '%'
+     REGEXP_LIKE (ext.mounted_on,SUBSTR(df.file_name,1,INSTR(df.file_name,'/',-1,2) - 1 ));
+
+
+
+
+
+
+
+select fsize,used,avail,use_pcent,mounted_on from dev.filesystem
+where mounted_on like '%/ora/data%';
+
+
+ SELECT 
+                    ext.mounted_on, 
+                    ext.fsize, 
+                    ext.used, 
+                    ext.Avail, 
+                    ext.use_pcent, 
+                    df.tablespace_name 
+                    FROM  dev.filesystem ext 
+                    JOIN   dba_data_files df 
+                    ON 
+                    REGEXP_LIKE (ext.mounted_on, SUBSTR(df.file_name, 1, INSTR(df.file_name, '/', -1, 2) - 1)) 
+                    and df.tablespace_name='TCC_LOB_AUTO_08'
+                    
+                    group by  df.tablespace_name,ext.mounted_on, 
+                    ext.fsize, 
+                    ext.used, 
+                    ext.Avail, 
+                    ext.use_pcent 
+                    order by tablespace_name 

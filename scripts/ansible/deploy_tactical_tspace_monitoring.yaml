@@ -1,0 +1,49 @@
+- name: tactical tablespace monitoring
+  hosts: all
+  tasks:
+    - name: Copy multiple script/files to remote server
+      copy:
+        src: "{{ item }}"
+        dest: /tmp
+        mode: "0700"
+      with_items:     #loop through and copy each file to destination
+        - df_h.sh
+        - setup_df_h.sh
+        - setup_cron.sh
+        - deploy_db_objects.sh
+
+    - name: Run setup_df_h.sh
+      shell: /tmp/setup_df_h.sh
+      register: setup_df_output
+
+    - name: Show output of setup_df_h.sh
+      debug:
+        msg: "{{ setup_df_output.stdout_lines }}"
+      when:
+        - setup_df_output is defined    #skip current task if previous task was not executed for any reason.
+
+    - name: Run setup_cron.sh (only if previous script succeeded)
+      shell: /tmp/setup_cron.sh
+      register: setup_cron_output
+      when:
+        - setup_df_output is defined  #skip current task if previous task was not executed for any reason.
+        - setup_df_output.rc == 0   #run task only when exit code of previous task is 0
+
+    - name: Show output of setup_cron.sh
+      debug:
+        msg: "{{ setup_cron_output.stdout_lines }}"
+      when: 
+        - setup_cron_output is defined    #skip current task if previous task was not executed for any reason.
+        - setup_cron_output.rc == 0   #run task only when exit code of previous task is 0
+
+    - name: Run deploy_db_objects.sh (only if previous script succeeded)
+      shell: /tmp/deploy_db_objects.sh  {{ oracle_sid }} {{ pdb_name | default('') }}
+      register: deploy_output
+      when: 
+        - setup_cron_output is defined    #skip current task if previous non-messaging task was not executed for any reason.
+        - setup_cron_output.rc == 0   #run task only when exit code of previous task is 0
+
+    - name: Show output of deploy_db_objects.sh
+      debug:
+        msg: "{{ deploy_output.stdout_lines }}"
+      when: deploy_output is defined    #run task only when exit code of previous task is 0

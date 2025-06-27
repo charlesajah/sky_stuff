@@ -1,0 +1,214 @@
+Matching SQL
+
+Same SQL irrespective of literals and spaces
+
+select 1 SMTEST from dual where DUMMY='B';
+select 1 SMTEST from dual where DUMMY='A'; 
+select 1 SMTEST from dual Where  DUMMY='A'; 
+ 
+ col exact_matching_signature for 99999999999999999999999999
+ col sql_text for a150 
+ col force_matching_signature for 9999999999999999999999999
+ set lines 300
+select sql_id, exact_matching_signature, force_matching_signature, SQL_TEXT from v$sqlarea where UPPER(sql_text) like '%SMTEST%' order by UPPER(sql_text);
+
+sql_id		exact_matching_signature	force_matching_signature	SQL_TEXT 
+4d5ttza6309c6	16769966494530832662		10687699431308281928		select 1 SMTEST from dual Where  DUMMY='A'
+0j5m7pxkyv24h	16769966494530832662		10687699431308281928		select 1 SMTEST from dual where DUMMY='A'
+dtf2w9cdsn4qd	9266901454868796943		10687699431308281928		select 1 SMTEST from dual where DUMMY='B'
+
+
+Partial Matching 
+select a1.sql_id sql_a, b2.sql_id sql_b, UTL_MATCH.edit_distance_similarity (DBMS_LOB.substr(a1.sql_text,4000, 1), DBMS_LOB.substr(b2.sql_text, 4000, 1))
+from dba_hist_sqltext a1, dba_hist_sqltext b2
+where a1.sql_id = '87bvg8q7w2q13'
+and UTL_MATCH.edit_distance_similarity (DBMS_LOB.substr(a1.sql_text,4000, 1), DBMS_LOB.substr(b2.sql_text, 4000, 1)) between 90 and 99;
+
+
+Eg.
+
+select a1.sql_id sql_a, b2.sql_id sql_b, UTL_MATCH.edit_distance_similarity (DBMS_LOB.substr(a1.sql_text,4000, 1), DBMS_LOB.substr(b2.sql_text, 4000, 1))
+from dba_hist_sqltext a1, dba_hist_sqltext b2
+where a1.sql_id = '87bvg8q7w2q13'
+and UTL_MATCH.edit_distance_similarity (DBMS_LOB.substr(a1.sql_text,4000, 1), DBMS_LOB.substr(b2.sql_text, 4000, 1)) between 90 and 100;
+
+87bvg8q7w2q13	87bvg8q7w2q13	100
+87bvg8q7w2q13	bw5vvv8bj1a0w	93
+87bvg8q7w2q13	b9n4xrgvsqhkt	94
+87bvg8q7w2q13	g2s7tbp17jz3x	92
+87bvg8q7w2q13	bxk7gth8nn483	100
+87bvg8q7w2q13	dkcm1wn1rmxj9	91
+
+
+
+--Checking if similarly matched SQLIds appeared in the database in a specific window
+--If found summarise the runtime per plan
+SELECT 
+  q.sql_id, 
+  q.plan_hash_value, 
+  MIN(s.end_interval_time), 
+  MAX(s.end_interval_time), 
+  CASE WHEN SUM (q.executions_delta) != 0 THEN ROUND (
+    SUM (q.elapsed_time_delta) / SUM (q.executions_delta) / 1000, 
+    2
+  ) END AS millisecs_per_exec, 
+  SUM (q.executions_delta) AS execs, 
+  SUM (q.rows_processed_delta) AS rows_tot, 
+  CASE WHEN SUM (q.executions_delta) != 0 THEN ROUND (
+    SUM (q.rows_processed_delta) / SUM (q.executions_delta)
+  ) END AS rows_pe, 
+  (
+    SELECT 
+      t.sql_text 
+    FROM 
+      dba_hist_sqltext t 
+    WHERE 
+      t.sql_id = q.sql_id 
+      AND ROWNUM <= 1
+  ) AS sql_text 
+FROM 
+  dba_hist_snapshot s 
+  JOIN dba_hist_sqlstat q ON q.snap_id = s.snap_id 
+  AND q.dbid = s.dbid 
+  AND q.instance_number = s.instance_number 
+WHERE 
+  s.begin_interval_time > trunc(sysdate) -8 
+  and s.begin_interval_time < to_date(
+    '28-AUG-2024 05:41:00', 'DD-MON-YYYY HH24:MI:SS'
+  ) 
+  and q.sql_id IN (
+    select 
+      b2.sql_id sql_b 
+    from 
+      dba_hist_sqltext a1, 
+      dba_hist_sqltext b2 
+    where 
+      a1.sql_id = '564astksjyyu9' 
+      and UTL_MATCH.edit_distance_similarity (
+        DBMS_LOB.substr(a1.sql_text, 4000, 1), 
+        DBMS_LOB.substr(b2.sql_text, 4000, 1)
+      ) between 90 
+      and 100
+  ) 
+GROUP BY 
+  q.sql_id, 
+  q.plan_hash_value 
+ORDER BY 
+  MAX (s.end_interval_time) DESC
+
+
+If you can narrow down the time frame
+
+
+
+with qs as
+(select /*+ parallel(8) */  a1.sql_id sql_a, b.sql_id sql_b, UTL_MATCH.edit_distance_similarity (DBMS_LOB.substr(a1.sql_text,4000,1), DBMS_LOB.substr(b2.sql_text, 4000,1)) score
+from dba_hist_sqlstat b, dba_hist_sqltext a1, dba_hist_sqltext b2
+where b.dbid=b2.dbid
+and b.sql_id = b2.sql_id
+and a1.sql_id = '87bvg8q7w2q13'
+and b.snap_id between 6047 and 6058)
+select *
+from qs
+where score between 80 and 100;
+
+
+
+Get snaps from 
+
+test_id would be something like 02APR24-2030_02APR24-2300_25MAR24-2030_25MAR24-2300
+
+select s.DBID, s.SNAP_ID, s.BEGIN_INTERVAL_TIME , e.SNAP_ID, e.BEGIN_INTERVAL_TIME, 'and a.snap_id between '||s.SNAP_ID||' and '||e.SNAP_ID
+from DBA_HIST_SNAPSHOT s, DBA_HIST_SNAPSHOT e
+where s.dbid =e.dbid
+and s.instance_number = e.instance_number
+and s.BEGIN_INTERVAL_TIME = (select max(m.BEGIN_INTERVAL_TIME) from DBA_HIST_SNAPSHOT m where m.BEGIN_INTERVAL_TIME <= to_date(substr('&&test_id',1,12) , 'DDMONYY-HH24MI'))
+and e.BEGIN_INTERVAL_TIME = (select min(m.BEGIN_INTERVAL_TIME) from DBA_HIST_SNAPSHOT m where m.BEGIN_INTERVAL_TIME >= to_date(substr('&&test_id',14,12) , 'DDMONYY-HH24MI') )
+UNION
+select s.DBID, s.SNAP_ID, s.BEGIN_INTERVAL_TIME , e.SNAP_ID, e.BEGIN_INTERVAL_TIME, 'and b.snap_id between '||s.SNAP_ID||' and '||e.SNAP_ID
+from DBA_HIST_SNAPSHOT s, DBA_HIST_SNAPSHOT e
+where s.dbid =e.dbid
+and s.instance_number = e.instance_number
+and s.BEGIN_INTERVAL_TIME = (select max(m.BEGIN_INTERVAL_TIME) from DBA_HIST_SNAPSHOT m where m.BEGIN_INTERVAL_TIME <= to_date(substr('&&test_id',27,12) , 'DDMONYY-HH24MI'))
+and e.BEGIN_INTERVAL_TIME = (select min(m.BEGIN_INTERVAL_TIME) from DBA_HIST_SNAPSHOT m where m.BEGIN_INTERVAL_TIME >= to_date(substr('&&test_id',40,24) , 'DDMONYY-HH24MI') )
+and length('&&test_id') > 25;
+
+
+Use HP_DIAG tables
+
+
+begin
+for r1 in (
+      with prev as (
+               SELECT ROWNUM rnum, a.database_name, a.sql_id, a.tps, a.ms_pe, a.sql_text, a.module
+                 FROM (
+                           SELECT LOWER ( s.database_name ) AS database_name, s.sql_id, 
+                                  TO_CHAR ( ROUND ( s.tps , 2 ) , 'FM9,999,999,999,999,999,999,999,999,999,990.00' ) AS tps,
+                                  TO_CHAR ( ROUND ( s.elapsed_time_per_exec_seconds * 1000 , 2 ) , 'FM9,999,999,999,999,999,999,999,999,999,990.00' ) AS ms_pe, 
+                                  LOWER ( TO_CHAR ( SUBSTR ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( st.sql_text , '"' ) , CHR(9) , ' ' ) , CHR(10) , ' ' ) , CHR(13), ' ' ) , '   ' , ' ' ) , '   ' , ' ' ) ,    '  ' , ' ' ) , '  ' , ' ' ) , 1 , 100 ) ) ) AS sql_text, 
+                                  LOWER ( s.module ) AS module
+                             FROM hp_diag.test_result_sql s
+                             LEFT OUTER JOIN test_result_sqltext st ON st.sql_id = s.sql_id
+                            WHERE test_id = '26APR24-0630_26APR24-0900'
+                              AND lower(s.module) not in('dbms_scheduler')
+                           ORDER BY elapsed_time_seconds DESC
+                      ) a
+         ) ,  cur as (
+               SELECT ROWNUM rnum, a.database_name, a.sql_id, a.tps, a.ms_pe, a.sql_text, a.module
+                 FROM (
+                           SELECT LOWER ( s.database_name ) AS database_name, s.sql_id, 
+                                  TO_CHAR ( ROUND ( s.tps , 2 ) , 'FM9,999,999,999,999,999,999,999,999,999,990.00' ) AS tps,
+                                  TO_CHAR ( ROUND ( s.elapsed_time_per_exec_seconds * 1000 , 2 ) , 'FM9,999,999,999,999,999,999,999,999,999,990.00' ) AS ms_pe,
+                                  LOWER ( TO_CHAR ( SUBSTR ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( REPLACE ( st.sql_text , '"' ) , CHR(9) , ' ' ) , CHR(10) , ' ' ) , CHR(13), ' ' ) , '   ' , ' ' ) , '   ' , ' ' ) ,    '  ' , ' ' ) , '  ' , ' ' ) , 1 , 100 ) ) ) AS sql_text, 
+                                  LOWER ( s.module ) AS module
+                             FROM hp_diag.test_result_sql s
+                             LEFT OUTER JOIN test_result_sqltext st ON st.sql_id = s.sql_id
+                            WHERE test_id = '29APR24-0630_29APR24-0900'
+                              AND lower(s.module) not in('dbms_scheduler')
+                           ORDER BY elapsed_time_seconds DESC
+                      ) a
+                WHERE ROWNUM <= 25
+           )
+     select *
+     from (
+      select cur.sql_id c_sql_id,
+             cur.rnum c_rnum,
+             nvl(to_char(prev.rnum), 'N/A') p_rnum,
+             cur.database_name c_db,
+             cur.tps c_tps,
+             nvl(to_char(prev.tps), 'N/A') p_tps,
+             cur.ms_pe c_ms,
+             nvl(to_char(prev.ms_pe), 'N/A') p_ms,
+             cur.sql_text c_text,
+             cur.module c_module
+        from cur, prev
+       where cur.database_name = prev.database_name (+)
+        and cur.sql_id = prev.sql_id (+)
+      order by cur.rnum)
+     where  p_rnum = 'N/A'
+   )
+   LOOP
+      --dbms_output.put_line( r1.c_sql_id||','||r1.c_rnum||','||r1.p_rnum ) ; -- replace this with output of alternative sql_ids
+      for r2 in (
+        with qs as 
+            (select /*+ parallel(8) */  distinct t1.sql_id sql1, t1.module module1, q1.database_name db_t1, t2.sql_id sql2, t2.module module2, 
+             UTL_MATCH.edit_distance_similarity (DBMS_LOB.substr(t1.sql_text,4000, 1), DBMS_LOB.substr(t2.sql_text, 4000, 1)) score, q2.test_id q2test
+             from test_result_sql q1, test_result_sqltext t1, test_result_sql q2, test_result_sqltext t2
+             where q1.sql_id = t1.sql_id
+             and q2.sql_id = t2.sql_id
+             and q1.database_name = q2.database_name
+             and t1.sql_id = r1.c_sql_id
+             and q1.sql_id != q2.sql_id
+             and q1.test_id = '29APR24-0630_29APR24-0900'
+             and q2.begin_time >= add_months(q1.begin_time, -2))
+         select sql1, module1, db_t1, sql2, module2, score, q2test
+         from qs
+         where score  between 80 and 100 
+         order by score desc
+      ) loop
+        dbms_output.put_line(r2.sql1||' - '||r2.sql2||' '||r2.q2test||' Scoring '||r2.score);
+      end loop;
+      
+   END LOOP ;
+   
+end;  

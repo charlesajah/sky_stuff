@@ -1,0 +1,108 @@
+--How to LOAD SQL plan from AWR when it is not in Cursor
+--There are three stages here.
+--We find  the plan_hash_value we want from AWR repo
+--Then we load it into an empty sql tuning set(STS)
+--Next we use the STS to create a SQL Plan baseline
+-- MOS Doc ID 789888.1
+
+--1. Find out the SQL ID and Number of SQL Plan existing in AWR History.
+SELECT SQL_ID, COUNT (*)
+    FROM (SELECT DISTINCT SQL_ID, PLAN_HASH_VALUE FROM DBA_HIST_SQL_PLAN
+    WHERE SQL_ID='dmqch2g6rtvzf')
+GROUP BY SQL_ID
+ORDER BY 2 DESC;
+
+--2. Find out the SQL Plan Hash Value using SQL ID.
+SELECT DISTINCT PLAN_HASH_VALUE,SQL_ID  FROM DBA_HIST_SQLSTAT
+WHERE SQL_ID='dmqch2g6rtvzf';
+
+--3. Check the SQL Execution Plan Cost and choose the best one.
+-- Note that you have to select Hash Vale and SNAP_ID for which you want to load into your Plan Baseline.
+-- Instead of the query below, we can use XPLAIN PLAN below to find the various plans and make deductions on the cheapest plan
+--select * from TABLE(dbms_xplan.display_awr('dmqch2g6rtvzf'));
+
+SELECT SS.SNAP_ID,
+     SS.INSTANCE_NUMBER,
+     BEGIN_INTERVAL_TIME,
+     SQL_ID,
+     PLAN_HASH_VALUE,OPTIMIZER_COST,
+     DISK_READS_TOTAL,
+     BUFFER_GETS_TOTAL,
+     ROWS_PROCESSED_TOTAL,
+     CPU_TIME_TOTAL,
+     ELAPSED_TIME_TOTAL,
+     IOWAIT_TOTAL,
+     NVL (EXECUTIONS_DELTA, 0) EXECS,
+       (  ELAPSED_TIME_DELTA
+        / DECODE (NVL (EXECUTIONS_DELTA, 0), 0, 1, EXECUTIONS_DELTA))
+     / 1000000
+        AVG_ETIME,
+     (  BUFFER_GETS_DELTA
+      / DECODE (NVL (BUFFER_GETS_DELTA, 0), 0, 1, EXECUTIONS_DELTA))
+        AVG_LIO
+FROM DBA_HIST_SQLSTAT S, DBA_HIST_SNAPSHOT SS
+WHERE     SQL_ID = 'dmqch2g6rtvzf'
+     AND SS.SNAP_ID = S.SNAP_ID
+     AND SS.INSTANCE_NUMBER = S.INSTANCE_NUMBER
+     AND EXECUTIONS_DELTA > 0
+ORDER BY 1, 2, 3;
+
+
+--At this stage you have decided on the plan_hash_value of the plan you want
+--. Populate the STS(SQL Tuning Set) using DBMS_SQLTUNE.SELECT_WORKLOAD_REPOSITORY
+--From SNAP ID 1,2 fro e.g, Load sql id dmqch2g6rtvzf with plan_hash_value 
+--and its sql plan and all execution statistics into STS test2 .
+--This will create an empty SQL Tuning set test2.
+--N.B the sql_id used in this example is not a real sql_id 
+
+exec DBMS_SQLTUNE.CREATE_SQLSET('test2');
+
+--The STS above is empty
+--Next we load it from the AWR repo 
+
+declare
+baseline_ref_cursor DBMS_SQLTUNE.SQLSET_CURSOR;
+begin
+open baseline_ref_cursor for
+select VALUE(p) from table(DBMS_SQLTUNE.SELECT_WORKLOAD_REPOSITORY(1, 2,'sql_id='||CHR(39)||'dmqch2g6rtvzf'||CHR(39)||' and plan_hash_value=1421641795',NULL,NULL,NULL,NULL,NULL,NULL,'ALL')) p;
+DBMS_SQLTUNE.LOAD_SQLSET('test2', baseline_ref_cursor);
+end;
+/
+
+
+--Verify how many sqls got loaded in the STS.
+-- we are expecting just one anyway
+SELECT NAME,OWNER,CREATED,STATEMENT_COUNT FROM DBA_SQLSET where name='test2';
+
+--Verify the sql statements and its sql_id in the STS
+select sql_id, substr(sql_text,1, 15) text
+from dba_sqlset_statements
+where sqlset_name = 'test3'
+order by sql_id;
+
+--Verify the execution Plan of a SQL_ID in the STS for an user sql
+SELECT * FROM table (DBMS_XPLAN.DISPLAY_SQLSET('test2','dmqch2g6rtvzf'));
+
+--What is the values for owner and creator of the STS?
+SELECT NAME,OWNER,CREATED,STATEMENT_COUNT FROM DBA_SQLSET where name='test2';
+
+--Verify the Plan baseline to check how many plans before
+--Even though a sql_id migt have many plans, they all share the same sql_handle
+--So find the sql_handle value from dba_sql_plan_baselines and supply iit in the where clause
+select count(*) from dba_sql_plan_baselines where sql_handle='';
+
+
+--how to flush SQL_ID from cache 
+select ADDRESS, HASH_VALUE from GV$SQLAREA where SQL_ID= '8rqxguzxz1fxf';
+exec DBMS_SHARED_POOL.PURGE ('0000001E5CA100A8, 4226857902', 'C');
+exec DBMS_SHARED_POOL.PURGE ('0000001E3D764410, 4102001793', 'C');
+
+-- Load the Sql Plan Baseline from STS
+set serveroutput on
+declare
+my_integer pls_integer;
+begin
+my_integer := dbms_spm.load_plans_from_sqlset(sqlset_name => 'test2', sqlset_owner => 'SYS', fixed => 'NO', enabled => 'YES');
+DBMS_OUTPUT.PUT_line(my_integer);
+end;
+/

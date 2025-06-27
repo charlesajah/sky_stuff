@@ -1,0 +1,82 @@
+select * from dba_data_files
+where tablespace_name='DEMO';
+
+
+'SELECT '
+                        'mounted_on, '
+                        'fsize, '
+                        'used, '
+                        'Avail, '
+                        'use_pcent, '
+                        'tablespace_name '
+                        'FROM ('
+                            'SELECT '
+                            'ext.mounted_on, '
+                            'ext.fsize, '
+                            'ext.used, '
+                            'ext.Avail, '
+                            'ext.use_pcent, '
+                            'df.tablespace_name, '
+                            'ROW_NUMBER() OVER ('
+                                'PARTITION BY df.file_name '
+                                'ORDER BY LENGTH(ext.mounted_on) DESC'
+                            ') as rn '
+                            'FROM dev.filesystem ext '
+                            'JOIN dba_data_files df ON df.file_name LIKE \'%\' || ext.mounted_on || \'%\' '
+                            'WHERE ext.mounted_on != \'/\''
+                            'AND df.tablespace_name= :tspace '
+                            'AND df.autoextensible= :xtensible '
+                        ') subquery '
+                        'WHERE rn = 1 '
+                        'GROUP BY tablespace_name, mounted_on, fsize, used, Avail, use_pcent '
+                        'ORDER BY tablespace_name';
+                        
+                        
+                        
+select 
+    distinct mounted_on,
+    fsize, 
+    used, 
+    Avail, 
+    use_pcent    
+    from(
+SELECT 
+    mounted_on, 
+    fsize, 
+    used, 
+    Avail, 
+    use_pcent, 
+    tablespace_name 
+FROM (
+    SELECT 
+        ext.mounted_on, 
+        ext.fsize, 
+        ext.used, 
+        ext.Avail, 
+        ext.use_pcent, 
+        df.tablespace_name, 
+        ROW_NUMBER() OVER (
+            PARTITION BY df.file_name 
+            ORDER BY LENGTH(ext.mounted_on) DESC
+        ) as rn 
+    FROM dev.filesystem ext 
+    JOIN dba_data_files df ON df.file_name LIKE '%' || ext.mounted_on || '%' 
+    WHERE ext.mounted_on != '/'
+    --AND df.tablespace_name = 'DEMO'
+    AND df.autoextensible = 'NO'
+) subquery 
+WHERE rn = 1 
+GROUP BY tablespace_name, mounted_on, fsize, used, Avail, use_pcent 
+ORDER BY tablespace_name);
+
+select * FROM dev.filesystem;
+
+select file_name from dba_data_files where tablespace_name='DEMO' and file_name like '%/cddcsdbn02/ora%';
+
+
+select username from dba_users where username like 'HP_DI%';
+
+grant alter  tablespace to HP_DIAG;
+
+
+select file_name from dba_data_files;

@@ -1,0 +1,598 @@
+select distinct table_name from (
+SELECT s.owner , lp.table_name , lp.partition_position , ROUND ( s.bytes/1024/1024/1024 ) AS gb
+     , lp.column_name , lp.lob_name , lp.partition_name AS table_partition_name , lp.lob_partition_name
+     , lp.tablespace_name , s.segment_type
+  FROM dba_segments s
+  --JOIN dba_lobs l ON s.owner = l.owner AND s.segment_name = l.segment_name
+  JOIN dba_lob_partitions lp ON s.owner = lp.table_owner AND s.segment_name = lp.lob_name AND s.partition_name = lp.lob_partition_name
+ where lp.tablespace_name in ('TCC_LOB_AUTO_01','TCC_LOB_AUTO_02','TCC_LOB_AUTO_06','TCC_LOB_AUTO_07','TCC_LOB_AUTO_09','TCC_LOB_AUTO_10')
+ --where lp.table_name='BSBCOMMSRENDER'
+   AND s.segment_type = 'LOB PARTITION'
+ --ORDER BY 1 , 2 , 3
+ )
+ order by 1
+;
+
+
+
+SELECT s.owner , lp.table_name , lp.partition_position , ROUND ( s.bytes/1024/1024/1024 ) AS gb
+     , lp.column_name , lp.lob_name , lp.partition_name AS table_partition_name , lp.lob_partition_name
+     , lp.tablespace_name , s.segment_type
+  FROM dba_segments s
+  --JOIN dba_lobs l ON s.owner = l.owner AND s.segment_name = l.segment_name
+  JOIN dba_lob_partitions lp ON s.owner = lp.table_owner AND s.segment_name = lp.lob_name AND s.partition_name = lp.lob_partition_name
+ WHERE s.tablespace_name in ('TCC_LOB_AUTO_01','TCC_LOB_AUTO_02','TCC_LOB_AUTO_06','TCC_LOB_AUTO_07','TCC_LOB_AUTO_09','TCC_LOB_AUTO_10')
+   AND s.segment_type = 'LOB PARTITION'
+   AND lp.table_name='BSBCOMMSRENDER'
+ ORDER BY 4 desc
+;
+
+select distinct table_name from dba_tables
+where tablespace_name in ('TCC_LOB_AUTO_10');
+
+select trunc(created) created, count(*) from tcc_owner.BSBCOMMSRENDER where created > trunc(sysdate- 72) group by trunc(created) order by 1;
+--select sysdate - 72 from dual;
+
+
+
+select * from hp_diag.nft_seg_space;
+
+
+
+select * from dba_tables where table_name='BSBCOMMSRENDER';
+select * from dba_objects where object_name='BSBCOMMSRENDER';
+SELECT *
+  FROM dba_TAB_PARTITIONS where table_name='BSBCOMMSRENDER';
+  
+  select * from DBA_LOB_PARTITIONS where table_name='BSBCOMMSRENDER' and lob_partition_name='SYS_LOB_P1289995';
+  select * from DBA_LOB_PARTITIONS where table_name='BSBCOMMSRENDER';
+  
+  
+  select file_name,
+       ceil( (nvl(hwm,1)*&&blksize)/1024/1024 ) smallest,
+       ceil( blocks*&&blksize/1024/1024) currsize,
+       ceil( blocks*&&blksize/1024/1024) -
+       ceil( (nvl(hwm,1)*&&blksize)/1024/1024 ) savings
+from dba_data_files a,
+     ( select file_id, max(block_id+blocks-1) hwm
+         from dba_extents
+        group by file_id ) b
+where a.file_id = b.file_id(+) order by savings desc;
+
+
+select file_name,bytes/1024/1024 from dba_data_files
+where tablespace_name='TCC_INDEX_AUTO_01';
+
+
+alter database move datafile '/trcomdbn01/ora/data26/TCC011N/tcc_lob_auto_10_0001.dbf' to '/trcomdbn01/ora/data22/TCC011N/tcc_lob_auto_10_0001.dbf';
+alter database datafile '/trcomdbn01/ora/data20/TCC011N/tcc_lob_auto_10_00119.dbf' resize 32767m;
+
+
+
+
+with snapshot_tmp as (
+  select
+     
+    /*+ materialize */
+    min(snap_id) snap
+  from
+    dba_hist_snapshot sn
+  where
+    sn.begin_interval_time > sysdate - 30
+  order by
+    1
+),
+seg_stat_tmp as (
+  select
+     
+    /*+ materialize */
+    a.obj#, round(sum(space_used_delta)/1024/1024,0) as space_growth_mb1, round(sum(space_allocated_delta)/1024/1024,0) as space_growth_lob_mb1
+  from
+    dba_hist_seg_stat a
+  where
+    snap_id >= (
+      select
+        snap
+      from
+        snapshot_tmp
+    )
+    and a.dataobj# = (select max(y.dataobj#) from dba_hist_seg_stat y where y.obj# = a.obj#)
+  group by
+    a.obj#
+    ),
+obj_tmp as (
+  select
+     
+    /*+ materialize */
+    b.owner,
+    (
+      case when b.subobject_name is null then b.object_name else b.subobject_name end
+    ) obj_name,
+    case when b.object_type in (
+      'TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION'
+    ) then b.object_name when b.object_type in (
+      'INDEX', 'INDEX PARTITION', 'INDEX SUBPARTITION'
+    ) then (
+      select
+        i.table_name
+      from
+        dba_indexes i
+      where
+        i.owner = b.owner
+        and i.index_name = b.object_name
+    ) when b.object_type = 'LOB' then (
+      select
+        l.table_name
+      from
+        dba_lobs l
+      where
+        l.owner = b.owner
+        and l.segment_name = b.object_name
+    ) when b.object_type = 'LOB PARTITION' then (
+      select
+        max(p.table_name)
+      from
+        dba_lob_partitions p
+      where
+        p.table_owner = b.owner
+        and p.lob_name = b.object_name
+    ) else b.object_name end parent_obj_name,
+    b.object_type,
+    b.object_id,
+    a.space_growth_mb1,
+    space_growth_lob_mb1
+  from
+    dba_objects b,
+    seg_stat_tmp a
+  where
+    b.object_id = a.obj#
+    )
+select
+  *
+from
+  (
+    select
+      owner,
+      obj_name,
+      parent_obj_name,
+      object_type,
+      sum(
+        case when object_type in ('LOB', 'LOB PARTITION') then space_growth_lob_mb1 else space_growth_mb1 end
+      ) as space_growth_mb
+    from
+      obj_tmp
+    group by
+      owner,
+      obj_name,
+      parent_obj_name,
+      object_type
+  )
+where
+  space_growth_mb >= 3000
+order by
+  space_growth_mb desc nulls last;
+
+
+
+-------------------------------------------------------------------------------------------------------------------
+select tsu.tablespace_name,
+       decode(ceil(tsf.free_mb), NULL, 0, ceil(tsf.free_mb)) free_mb,
+       ceil(tsu.used_mb) total_mb,
+       decode(100 - ceil(tsf.free_mb / tsu.used_mb * 100),
+              NULL,
+              100,
+              round(tsf.free_mb / tsu.used_mb * 100,2)) pct_free
+  from (select tablespace_name, sum(bytes) / 1024 / 1024 used_mb
+          from dba_data_files
+         group by tablespace_name) tsu,
+       (select tablespace_name, sum(bytes) / 1024 / 1024 free_mb
+          from dba_free_space
+         group by tablespace_name) tsf
+ where tsu.tablespace_name = tsf.tablespace_name(+)
+ and tsu.tablespace_name not in ('TOOLS_AUTO_01','UNDOTBS','USERS_AUTO_01','SYSTEM','SYSAUX')
+ --and tsu.tablespace_name not like 'TCC_%'
+ order by 2 desc;
+ 
+ select * from dev.filesystem;
+ 
+ select * from dba_data_files
+ where tablespace_name like 'UNDO%';
+ 
+
+
+ 
+ select file_id,file_name,bytes/1024/1024 from dba_data_files
+where tablespace_name='TCC_LOB_AUTO_10';
+
+alter database move datafile '/trcomdbn01/ora/data28/TCC011N/tcc_lob_auto_10_00118.dbf' to '/trcomdbn01/ora/data20/TCC011N/tcc_lob_auto_10_00118.dbf';
+
+
+select * from dev.filesystem;
+
+
+
+set verify off
+column file_name format a50 word_wrapped
+column smallest format 999,990 heading "Smallest|Size|Poss."
+column currsize format 999,990 heading "Current|Size"
+column savings  format 999,990 heading "Poss.|Savings"
+break on report
+compute sum of savings on report
+column value new_val blksize
+select value from v$parameter where name = 'db_block_size';
+/
+
+select tablespace_name,
+       --ceil( (nvl(hwm,1)*&&blksize)/1024/1024 ) smallest,
+       --ceil( blocks*&&blksize/1024/1024) currsize,
+      sum( ceil( blocks*&&blksize/1024/1024) -
+       ceil( (nvl(hwm,1)*&&blksize)/1024/1024 )) savings
+from dba_data_files a,
+     ( select file_id, max(block_id+blocks-1) hwm
+         from dba_extents
+        group by file_id ) b
+where a.file_id = b.file_id(+) 
+--and a.file_name like '%TCC_LOB_AUTO_01%'
+group by tablespace_name
+order by savings desc
+/
+
+ select * from v$instance;
+
+alter database datafile '/trcomdbn01/ora/data22/TCC011N/tcc_lob_auto_09_0045.dbf' resize 500m;
+
+
+
+
+with t as (
+select ss.run_time,ts.name,round(su.tablespace_size*dt.block_size/1024/1024/1024,2) alloc_size_gb,
+round(su.tablespace_usedsize*dt.block_size/1024/1024/1024,2) used_size_gb
+from
+dba_hist_tbspc_space_usage su,
+(select trunc(BEGIN_INTERVAL_TIME) run_time,max(snap_id) snap_id from dba_hist_snapshot
+group by trunc(BEGIN_INTERVAL_TIME) ) ss,
+v$tablespace ts,
+dba_tablespaces dt
+where su.snap_id = ss.snap_id
+and su.tablespace_id = ts.ts#
+--and ts.name =upper('TCC_LOB_AUTO_10')
+and ts.name = dt.tablespace_name )
+select e.run_time,e.name,e.alloc_size_gb,e.used_size_gb curr_used_size_gb,
+b.used_size_gb prev_used_size_gb,
+case when e.used_size_gb > b.used_size_gb
+then to_char(e.used_size_gb - b.used_size_gb)
+when e.used_size_gb = b.used_size_gb
+then '***NO DATA GROWTH'
+when e.used_size_gb < b.used_size_gb
+then '******DATA PURGED' end variance
+from t e, t b
+where e.run_time = b.run_time + 1
+order by 1;
+
+
+
+select
+so.owner,
+so.object_name,
+--so.subobject_name,
+so.object_type,
+so.tablespace_name,
+round(sum(ss.space_used_delta)/1024/1024) growth_mb
+from
+dba_hist_seg_stat ss,
+dba_hist_seg_stat_obj so
+where
+ss.obj# = so.obj#
+and ss.dataobj# = so.dataobj#
+and so.owner != '** MISSING **' -- segments already gone
+and so.object_name not like 'BIN$%' -- recycle-bin
+--and so.object_type not like 'LOB%'
+and ss.snap_id > (
+select min(sn.snap_id)
+from dba_hist_snapshot sn
+where
+sn.dbid = (select dbid from v$database)
+and sn.end_interval_time > trunc(sysdate) - 30
+)
+group by
+so.owner,
+so.object_name,
+--so.subobject_name,
+so.object_type,
+so.tablespace_name
+order by 5 desc
+fetch first 500 rows only;
+
+
+
+
+
+
+select * from (
+select segment_name,segment_type,tablespace_name,sum(round(bytes/1024/1024/1024,2)) size_gb from dba_Segments 
+group by segment_name,segment_type,tablespace_name
+order by size_gb desc)
+where size_gb > 10
+and tablespace_name='TCC_LOB_AUTO_10';
+
+select * from dba_objects where object_name='SYS_LOB_P1290776';
+
+
+
+select to_char(creation_time, 'RRRR Month') "Month",
+round(sum(bytes)/1024/1024/1024,2) "Growth in GB"
+from sys.v_$datafile
+where creation_time > SYSDATE-365
+group by to_char(creation_time, 'RRRR Month')
+order by 1 asc;
+
+
+
+
+select * from (select to_char(end_interval_time, 'Mon/DD/YYYY') mydate, sum(space_used_delta) / 1024 / 1024 "Space used (MB)", avg(c.bytes) / 1024 / 1024 "Total Object Size (MB)",
+round(sum(space_used_delta) / sum(c.bytes) * 100, 2) "Percent of Total Disk Usage"
+from
+dba_hist_snapshot sn,
+dba_hist_seg_stat a,
+dba_objects b,
+dba_segments c
+where begin_interval_time > trunc(sysdate) - 60
+and sn.snap_id = a.snap_id
+and b.object_id = a.obj#
+and b.owner = c.owner
+and b.object_name = c.segment_name
+and c.segment_name = 'SFCRBINARYRENDERBODYBLOBSEG'
+group by to_char(end_interval_time, 'Mon/DD/YYYY'))
+order by to_date(mydate, 'Mon/DD/YYYY')
+fetch first 500 rows only;
+
+
+
+
+
+
+with snapshot_tmp as
+(
+select /*+ materialize */ min(snap_id) snap from dba_hist_snapshot sn
+where sn.begin_interval_time > sysdate - 30 order by 1), 
+seg_stat_tmp as 
+(
+select /*+ materialize */ 
+a.obj#, round(sum(space_used_delta)/1024/1024,0) as space_growth_mb1, round(sum(space_allocated_delta)/1024/1024,0) as space_growth_lob_mb1
+from dba_hist_seg_stat a 
+where 
+snap_id >= (select snap from snapshot_tmp) 
+and a.dataobj# = (select max(y.dataobj#) from dba_hist_seg_stat y where y.obj# = a.obj#)
+group by a.obj#
+), 
+obj_tmp as 
+(
+select /*+ materialize */ 
+b.owner, 
+(case when b.subobject_name is null then b.object_name else b.subobject_name end) obj_name, 
+case when b.object_type in ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION') then b.object_name 
+when b.object_type in ('INDEX', 'INDEX PARTITION', 'INDEX SUBPARTITION') then (select i.table_name from dba_indexes i where i.owner = b.owner and i.index_name = b.object_name)
+when b.object_type = 'LOB' then (select l.table_name from dba_lobs l where l.owner = b.owner and l.segment_name = b.object_name)
+when b.object_type = 'LOB PARTITION' then (select max(p.table_name) from dba_lob_partitions p where p.table_owner = b.owner and p.lob_name = b.object_name)
+else b.object_name end parent_obj_name, 
+b.object_type, 
+b.object_id, 
+a.space_growth_mb1,
+space_growth_lob_mb1
+from dba_objects b, seg_stat_tmp a 
+where 
+b.object_id = a.obj# 
+)
+select * from 
+(
+select 
+owner, 
+obj_name, 
+parent_obj_name, 
+object_type,
+sum(case when object_type in ('LOB', 'LOB PARTITION') then space_growth_lob_mb1 else space_growth_mb1 end) as space_growth_mb
+from obj_tmp 
+group by 
+owner, 
+obj_name,
+parent_obj_name,
+object_type
+)
+where space_growth_mb >=3000
+order by space_growth_mb desc nulls last;
+
+
+select * from dba_hist_wr_control;
+
+
+select * from dba_lobs
+where segment_name='SFCRBINARYRENDERBODYBLOBSEG';
+
+select * from dba_Segments
+where segment_name='BSBCOMMSRENDER';
+
+select * from dba_objects where object_name='BSBCOMMSRENDER';
+
+
+
+select o.owner,o.object_name,o.subobject_name,o.created,l.table_name,l.column_name,l.segment_name,l.tablespace_name
+from dba_objects o,dba_lobs l
+where  o.object_name=l.segment_name
+and o.subobject_name='SYS_LOB_P1290776';
+
+
+
+select file_name from dba_data_files
+--desc dba_data_files;
+where tablespace_name='TCC_LOB_AUTO_10';
+
+select * from dev.filesystem;
+alter tablespace undotbs add datafile '/share/oraexpsol/undotbs/undotbs_00123' size 31G;
+
+select tsu.tablespace_name,
+       decode(ceil(tsf.free_gb), NULL, 0, ceil(tsf.free_gb)) free_gb,
+       ceil(tsu.used_gb) total_gb,
+       decode(100 - ceil(tsf.free_gb / tsu.used_gb * 100),
+              NULL,
+              100,
+              round(tsf.free_gb / tsu.used_gb * 100,2)) pct_free
+  from (select tablespace_name, sum(bytes) / 1024 / 1024 /1024 used_gb
+          from dba_data_files
+         group by tablespace_name) tsu,
+       (select tablespace_name, sum(bytes) / 1024 / 1024 /1024 free_gb
+          from dba_free_space
+         group by tablespace_name) tsf
+ where tsu.tablespace_name = tsf.tablespace_name(+)
+ and tsu.tablespace_name not in ('TOOLS_AUTO_01','USERS_AUTO_01','SYSTEM','SYSAUX')
+ --and tsu.tablespace_name not like 'TCC_%'
+ order by free_gb desc;
+ 
+ 
+ select sum(dbms_lob.getlength (BINARY_RENDER_BODY)) from TCC_OWNER.BSBCOMMSRENDER;
+
+ 
+ 
+ 
+select tablespace_name, SEGMENT_SPACE_MANAGEMENT
+  from dba_tablespaces
+where tablespace_name='TCC_LOB_AUTO_10';
+
+SELECT *
+FROM DBA_TAB_COLUMNS
+WHERE DATA_TYPE LIKE '_LOB'
+    AND OWNER LIKE '%TCC_OWNER%'
+    and table_name='BSBCOMMSRENDER';
+ 
+ 
+ select tablespace_name,round(sum(bytes/1024/1024/1024),2) used_gb from dba_data_files
+ group by tablespace_name order by used_gb desc;
+ 
+ 
+ 
+ 
+ 
+ select 'TCC011N',sum(space_growth_MB) Growth_MB from (
+ with snapshot_tmp as
+(
+select /*+ materialize */ min(snap_id) snap from dba_hist_snapshot sn
+where sn.begin_interval_time > sysdate - 30 order by 1), 
+seg_stat_tmp as 
+(
+select /*+ materialize */ 
+a.obj#, round(sum(space_used_delta)/1024/1024,0) as space_growth_mb1, round(sum(space_allocated_delta)/1024/1024,0) as space_growth_lob_mb1
+from dba_hist_seg_stat a 
+where 
+snap_id >= (select snap from snapshot_tmp) 
+and a.dataobj# = (select max(y.dataobj#) from dba_hist_seg_stat y where y.obj# = a.obj#)
+group by a.obj#
+), 
+obj_tmp as 
+(
+select /*+ materialize */ 
+b.owner, 
+(case when b.subobject_name is null then b.object_name else b.subobject_name end) obj_name, 
+case when b.object_type in ('TABLE', 'TABLE PARTITION', 'TABLE SUBPARTITION') then b.object_name 
+when b.object_type in ('INDEX', 'INDEX PARTITION', 'INDEX SUBPARTITION') then (select i.table_name from dba_indexes i where i.owner = b.owner and i.index_name = b.object_name)
+when b.object_type = 'LOB' then (select l.table_name from dba_lobs l where l.owner = b.owner and l.segment_name = b.object_name)
+when b.object_type = 'LOB PARTITION' then (select max(p.table_name) from dba_lob_partitions p where p.table_owner = b.owner and p.lob_name = b.object_name)
+else b.object_name end parent_obj_name, 
+b.object_type, 
+b.object_id, 
+a.space_growth_mb1,
+space_growth_lob_mb1
+from dba_objects b, seg_stat_tmp a 
+where 
+b.object_id = a.obj# 
+)
+select * from 
+(
+select 
+owner, 
+obj_name, 
+parent_obj_name, 
+object_type,
+sum(case when object_type in ('LOB', 'LOB PARTITION') then space_growth_lob_mb1 else space_growth_mb1 end) as space_growth_mb
+from obj_tmp 
+group by 
+owner, 
+obj_name,
+parent_obj_name,
+object_type
+)
+--where space_growth_mb >=3000
+order by space_growth_mb desc nulls last)
+;
+
+
+select sysdate - 30 from dual;
+
+
+alter database datafile '/trcomdbn01/ora/data22/TCC011N/tcc_lob_auto_09_0045.dbf' resize 10m;
+
+
+
+
+select * from v$sql where sql_text like '%move partition SYS_P1289343%';
+
+select * from v$session where sql_id='9g1h7yf6dsdxz';
+alter system kill session '485,20548' immediate;
+
+select sid,username,opname,message,sofar,totalwork,(sofar/totalwork)*100 "PER%" from v$session_longops where sofar<>totalwork
+and sid=485;
+
+
+select tsu.tablespace_name,
+       decode(ceil(tsf.free_gb), NULL, 0, ceil(tsf.free_gb)) free_gb,
+       ceil(tsu.used_gb) total_gb,
+       decode(100 - ceil(tsf.free_gb / tsu.used_gb * 100),
+              NULL,
+              100,
+              round(tsf.free_gb / tsu.used_gb * 100,2)) pct_free
+  from (select tablespace_name, sum(bytes) / 1024 / 1024 /1024 used_gb
+          from dba_data_files
+         group by tablespace_name) tsu,
+       (select tablespace_name, sum(bytes) / 1024 / 1024 /1024 free_gb
+          from dba_free_space
+         group by tablespace_name) tsf
+ where tsu.tablespace_name = tsf.tablespace_name(+)
+ and tsu.tablespace_name='UNDOTBS';
+
+SELECT TRUNC (first_time) "Date", inst_id, TO_CHAR (first_time, 'Dy') "Day",
+ COUNT (1) "Total",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '00', 1, 0)) "h0",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '01', 1, 0)) "h1",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '02', 1, 0)) "h2",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '03', 1, 0)) "h3",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '04', 1, 0)) "h4",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '05', 1, 0)) "h5",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '06', 1, 0)) "h6",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '07', 1, 0)) "h7",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '08', 1, 0)) "h8",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '09', 1, 0)) "h9",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '10', 1, 0)) "h10",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '11', 1, 0)) "h11",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '12', 1, 0)) "h12",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '13', 1, 0)) "h13",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '14', 1, 0)) "h14",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '15', 1, 0)) "h15",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '16', 1, 0)) "h16",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '17', 1, 0)) "h17",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '18', 1, 0)) "h18",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '19', 1, 0)) "h19",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '20', 1, 0)) "h20",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '21', 1, 0)) "h21",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '22', 1, 0)) "h22",
+ SUM (DECODE (TO_CHAR (first_time, 'hh24'), '23', 1, 0)) "h23",
+ ROUND (COUNT (1) / 24, 2) "Avg"
+FROM gv$log_history
+WHERE thread# = inst_id
+AND first_time > sysdate -7
+GROUP BY TRUNC (first_time), inst_id, TO_CHAR (first_time, 'Dy')
+ORDER BY 1,2;
+
+
+show parameter log_archive
+
+
+
+

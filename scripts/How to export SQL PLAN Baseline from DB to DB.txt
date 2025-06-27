@@ -1,0 +1,48 @@
+--How to export SQL PLAN Baseline from one database to another
+
+--On the source database
+--STEP 1) create a staging table
+--in our example we call the table stage
+SQL> BEGIN
+  DBMS_SPM.CREATE_STGTAB_BASELINE(table_name => 'stage');
+END;
+/
+
+PL/SQL procedure successfully completed.
+
+--STEP 2) Pack the sql plan baseline that 
+--you want to export from the SQL plan management baseline into the staging table using the PACK_STGTAB_BASELINE function.
+--you need to query dba_sql_plan_baseline  where sql_id=sql_id to find out the SQL_HANDLE value.
+--Here we are using SQL_HANDLE=SQL_5bf39dfrta1a5b89
+DECLARE
+  my_plans number;
+BEGIN
+  my_plans := DBMS_SPM.PACK_STGTAB_BASELINE(
+    table_name => 'stage',
+    enabled => 'yes',
+    SQL_HANDLE => 'SQL_5bf39dfrta1a5b89');
+END;
+/
+
+--STEP 3) Export the staging table using datapump and import the dump file into the target database
+
+--Unpack the SQL plan baseline from the staging table into the SQL plan management baseline  on the target
+--system using the UNPACK_STGTAB_BASELINE function.
+SET SERVEROUTPUT ON
+DECLARE
+  l_plans_unpacked  PLS_INTEGER;
+BEGIN
+  l_plans_unpacked := DBMS_SPM.unpack_stgtab_baseline(
+    table_name      => 'STAGE',
+    table_owner     => 'SYSTEM',
+    creator         => 'SYSTEM');
+DBMS_OUTPUT.put_line('Plans Unpacked: ' || l_plans_unpacked);
+END;
+/
+
+Plans Unpacked: 1
+PL/SQL procedure successfully completed.
+
+--query dba_sql_plan_baseline  where sql_id=sql_id to find out the plan that you imported
+--It helps to know what the plan name was on the source database because it imports it using same name
+

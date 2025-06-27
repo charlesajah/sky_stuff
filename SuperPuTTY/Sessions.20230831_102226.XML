@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArrayOfSessionData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SessionData SessionId="Chord/chord_N02" SessionName="chord_N02" ImageKey="computer" Host="chorddbn02.bskyb.com" Port="22" Proto="SSH" PuttySession="Default Settings" Username="cae46" ExtraArgs="" SPSLFileName="" RemotePath="" LocalPath="" />
+  <SessionData SessionId="Chord/Chordo_N01" SessionName="Chordo_N01" ImageKey="computer" Host="chorddbptt.sssl.bskyb.com" Port="22" Proto="SSH" PuttySession="Default Settings" Username="cae46" ExtraArgs="" SPSLFileName="" RemotePath="" LocalPath="" />
+  <SessionData SessionId="Kenan/kenan5" SessionName="kenan5" ImageKey="computer" Host="kenfcdbn01" Port="22" Proto="SSH" PuttySession="Default Settings" Username="cae46" ExtraArgs="" SPSLFileName="" RemotePath="" LocalPath="" />
+  <SessionData SessionId="Kenan/kenan6" SessionName="kenan6" ImageKey="computer" Host="kenfcdbn01" Port="22" Proto="SSH" PuttySession="Default Settings" Username="cae46" ExtraArgs="" SPSLFileName="" RemotePath="" LocalPath="" />
+  <SessionData SessionId="Kenan/Kenen4" SessionName="Kenen4" ImageKey="computer" Host="kenfbdbn01" Port="22" Proto="SSH" PuttySession="Default Settings" Username="cae46" ExtraArgs="" SPSLFileName="" RemotePath="" LocalPath="" />
+</ArrayOfSessionData>

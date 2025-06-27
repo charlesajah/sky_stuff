@@ -1,0 +1,111 @@
+2024-01-25 18:38:08,226 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-25 19:45:57,021 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-25 19:45:57,023 - __main__ - INFO - Running in 64-bit mode.
+2024-01-25 19:45:57,273 - __main__ - INFO - NOTE: QUERY TIMEOUT      = 30 seconds
+2024-01-25 19:45:57,274 - __main__ - INFO - NOTE: CONNECTION TIMEOUT = 30 seconds
+2024-01-25 19:45:57,277 - __main__ - INFO - NOTE: MINIMUM FREE PERCENT  = 2.0
+2024-01-25 19:46:04,625 - __main__ - INFO - Collecting Tablespace data ...
+2024-01-25 19:46:04,628 - __main__ - INFO - _datapoint:DatabaseTablespace:TCC021N_DEMO2:freepct:1.67
+2024-01-25 19:46:12,968 - __main__ - INFO - Total additional space needed: 46.00000000000001 MB
+2024-01-25 19:46:21,342 - __main__ - INFO - New datafile /trcomdbn02/ora/data10/TCC021N/demo2_001.dbf successfully added to tablespace DEMO2
+2024-01-25 19:46:21,346 - __main__ - INFO - Successfully allocated 46.00000000000001 MB across mount points.
+2024-01-25 19:46:21,352 - __main__ - INFO - 46.00000000000001 MB allocated to mount point /trcomdbn02/ora/data10
+2024-01-25 19:46:21,353 - __main__ - INFO - Collecting Recovery Area data ...
+2024-01-25 19:46:21,524 - __main__ - INFO - _datapoint:DatabaseAvailability:TCC021N Availability:status:1
+2024-01-25 20:06:05,597 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-25 20:06:05,597 - __main__ - INFO - Running in 64-bit mode.
+2024-01-25 20:06:05,839 - __main__ - INFO - NOTE: QUERY TIMEOUT      = 30 seconds
+2024-01-25 20:06:05,840 - __main__ - INFO - NOTE: CONNECTION TIMEOUT = 30 seconds
+2024-01-25 20:06:05,849 - __main__ - INFO - NOTE: MINIMUM FREE PERCENT  = 2.0
+2024-01-25 20:06:15,982 - __main__ - INFO - Collecting Tablespace data ...
+2024-01-25 20:06:15,984 - __main__ - INFO - _datapoint:DatabaseTablespace:TCC021N_DEMO2:freepct:1.67
+2024-01-25 20:06:17,146 - __main__ - INFO - Total additional space needed: 46.00000000000001 MB
+2024-01-25 20:06:19,237 - __main__ - INFO - New datafile /trcomdbn02/ora/data10/TCC021N/demo2_001.dbf successfully added to tablespace DEMO2
+2024-01-25 20:06:19,240 - __main__ - INFO - Successfully allocated 46.00000000000001 MB across mount points.
+2024-01-25 20:06:19,246 - __main__ - INFO - 46.00000000000001 MB allocated to mount point /trcomdbn02/ora/data10
+2024-01-25 20:06:19,247 - __main__ - INFO - Collecting Recovery Area data ...
+2024-01-25 20:06:19,444 - __main__ - INFO - _datapoint:DatabaseAvailability:TCC021N Availability:status:1
+2024-01-26 09:51:57,422 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-26 09:51:57,423 - __main__ - INFO - Running in 64-bit mode.
+2024-01-26 09:51:58,127 - __main__ - INFO - NOTE: QUERY TIMEOUT      = 30 seconds
+2024-01-26 09:51:58,128 - __main__ - INFO - NOTE: CONNECTION TIMEOUT = 30 seconds
+2024-01-26 09:51:58,139 - __main__ - INFO - NOTE: MINIMUM FREE PERCENT  = 2.0
+2024-01-26 09:51:58,139 - __main__ - INFO - DEBUG: Number of databases being checked:, 1
+2024-01-26 09:52:09,331 - __main__ - INFO - Collecting Tablespace data ...
+2024-01-26 09:52:09,334 - __main__ - INFO - _datapoint:DatabaseTablespace:TCC021N_DEMO2:freepct:1.67
+2024-01-26 09:52:16,876 - __main__ - INFO - Total additional space needed: 46.00000000000001 MB
+2024-01-26 09:52:25,473 - __main__ - INFO - New datafile /trcomdbn02/ora/data10/TCC021N/demo2_001.dbf successfully added to tablespace DEMO2
+2024-01-26 09:52:25,476 - __main__ - INFO - Successfully allocated 46.00000000000001 MB across mount points.
+2024-01-26 09:52:25,483 - __main__ - INFO - 46.00000000000001 MB allocated to mount point /trcomdbn02/ora/data10
+2024-01-26 09:52:25,484 - __main__ - INFO - Collecting Recovery Area data ...
+2024-01-26 09:52:25,632 - __main__ - INFO - _datapoint:DatabaseAvailability:TCC021N Availability:status:1
+2024-01-26 10:32:30,228 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-26 10:32:30,229 - __main__ - INFO - Running in 64-bit mode.
+2024-01-26 10:32:30,551 - __main__ - INFO - NOTE: QUERY TIMEOUT      = 30 seconds
+2024-01-26 10:32:30,551 - __main__ - INFO - NOTE: CONNECTION TIMEOUT = 30 seconds
+2024-01-26 10:32:30,561 - __main__ - INFO - NOTE: MINIMUM FREE PERCENT  = 2.0
+2024-01-26 10:32:30,561 - __main__ - INFO - DEBUG: Number of databases being checked:, 1
+2024-01-26 10:32:37,928 - __main__ - INFO - Collecting Tablespace data ...
+2024-01-26 10:32:37,929 - __main__ - INFO - _datapoint:DatabaseTablespace:TCC021N_DEMO2:freepct:1.67
+2024-01-26 10:32:45,693 - __main__ - INFO - Total additional space needed: 46.00000000000001 MB
+2024-01-26 10:32:47,442 - __main__ - INFO - New datafile /trcomdbn02/ora/data10/TCC021N/demo2_001.dbf successfully added to tablespace DEMO2
+2024-01-26 10:32:47,442 - __main__ - INFO - Successfully allocated 46.00000000000001 MB across mount points.
+2024-01-26 10:32:47,444 - __main__ - INFO - 46.00000000000001 MB allocated to mount point /trcomdbn02/ora/data10
+2024-01-26 10:32:47,450 - __main__ - INFO - Collecting Recovery Area data ...
+2024-01-26 10:32:47,620 - __main__ - INFO - _datapoint:DatabaseAvailability:TCC021N Availability:status:1
+2024-01-29 17:25:50,492 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-29 17:25:50,492 - __main__ - INFO - Running in 64-bit mode.
+2024-01-29 17:25:50,656 - __main__ - ERROR - Uncaught Exception: Traceback (most recent call last):
+  File "C:\Users\cae46\OneDrive - Sky\Documents\python\testing\OracleTablespaceMonitorFreeSpaceNonFocus.py", line 60, in <module>
+    oracledb.init_oracle_client(lib_dir=d)
+  File "src\\oracledb\\impl/thick/utils.pyx", line 466, in oracledb.thick_impl.init_oracle_client
+  File "src\\oracledb\\impl/thick/utils.pyx", line 490, in oracledb.thick_impl.init_oracle_client
+  File "src\\oracledb\\impl/thick/utils.pyx", line 417, in oracledb.thick_impl._raise_from_info
+oracledb.exceptions.DatabaseError: DPI-1047: Cannot locate a 64-bit Oracle Client library: "The specified module could not be found". See https://python-oracledb.readthedocs.io/en/latest/user_guide/initialization.html for help
+Help: https://python-oracledb.readthedocs.io/en/latest/user_guide/troubleshooting.html#dpi-1047
+
+2024-01-29 17:26:21,801 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-29 17:26:21,803 - __main__ - INFO - Running in 64-bit mode.
+2024-01-29 17:26:21,956 - __main__ - ERROR - Uncaught Exception: Traceback (most recent call last):
+  File "C:\Users\cae46\OneDrive - Sky\Documents\python\testing\OracleTablespaceMonitorFreeSpaceNonFocus.py", line 60, in <module>
+    oracledb.init_oracle_client(lib_dir=d)
+  File "src\\oracledb\\impl/thick/utils.pyx", line 466, in oracledb.thick_impl.init_oracle_client
+  File "src\\oracledb\\impl/thick/utils.pyx", line 490, in oracledb.thick_impl.init_oracle_client
+  File "src\\oracledb\\impl/thick/utils.pyx", line 417, in oracledb.thick_impl._raise_from_info
+oracledb.exceptions.DatabaseError: DPI-1047: Cannot locate a 64-bit Oracle Client library: "The specified module could not be found". See https://python-oracledb.readthedocs.io/en/latest/user_guide/initialization.html for help
+Help: https://python-oracledb.readthedocs.io/en/latest/user_guide/troubleshooting.html#dpi-1047
+
+2024-01-29 17:27:07,483 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-29 17:27:07,483 - __main__ - INFO - Running in 64-bit mode.
+2024-01-29 17:27:07,629 - __main__ - ERROR - Uncaught Exception: Traceback (most recent call last):
+  File "C:\Users\cae46\OneDrive - Sky\Documents\python\testing\OracleTablespaceMonitorFreeSpaceNonFocus.py", line 60, in <module>
+    oracledb.init_oracle_client(lib_dir=d)
+  File "src\\oracledb\\impl/thick/utils.pyx", line 466, in oracledb.thick_impl.init_oracle_client
+  File "src\\oracledb\\impl/thick/utils.pyx", line 490, in oracledb.thick_impl.init_oracle_client
+  File "src\\oracledb\\impl/thick/utils.pyx", line 417, in oracledb.thick_impl._raise_from_info
+oracledb.exceptions.DatabaseError: DPI-1047: Cannot locate a 64-bit Oracle Client library: "The specified module could not be found". See https://python-oracledb.readthedocs.io/en/latest/user_guide/initialization.html for help
+Help: https://python-oracledb.readthedocs.io/en/latest/user_guide/troubleshooting.html#dpi-1047
+
+2024-01-29 17:28:39,901 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-29 17:28:39,903 - __main__ - INFO - Running in 64-bit mode.
+2024-01-29 17:28:41,901 - __main__ - INFO - NOTE: QUERY TIMEOUT      = 30 seconds
+2024-01-29 17:28:41,902 - __main__ - INFO - NOTE: CONNECTION TIMEOUT = 30 seconds
+2024-01-29 17:28:41,910 - __main__ - INFO - NOTE: MINIMUM FREE PERCENT  = 2.0
+2024-01-29 17:28:41,911 - __main__ - INFO - DEBUG: Number of databases being checked:, 1
+2024-01-29 17:29:13,999 - __main__ - INFO - Collecting Tablespace data ...
+2024-01-29 17:29:14,001 - __main__ - INFO - Collecting Recovery Area data ...
+2024-01-29 17:29:14,021 - __main__ - INFO - _datapoint:DatabaseAvailability:TCC011N Availability:status:1
+2024-01-29 17:30:38,785 - __main__ - INFO - Starting OracleTablespaceMonitorFreeSpaceNonFocus.py
+2024-01-29 17:30:38,787 - __main__ - INFO - Running in 64-bit mode.
+2024-01-29 17:30:38,967 - __main__ - INFO - NOTE: QUERY TIMEOUT      = 30 seconds
+2024-01-29 17:30:38,967 - __main__ - INFO - NOTE: CONNECTION TIMEOUT = 30 seconds
+2024-01-29 17:30:38,970 - __main__ - INFO - NOTE: MINIMUM FREE PERCENT  = 2.0
+2024-01-29 17:30:38,970 - __main__ - INFO - DEBUG: Number of databases being checked:, 1
+2024-01-29 17:31:01,565 - __main__ - INFO - Collecting Tablespace data ...
+2024-01-29 17:31:01,565 - __main__ - INFO - _datapoint:DatabaseTablespace:TCC011N_DEMO2:freepct:36
+2024-01-29 17:31:04,517 - __main__ - INFO - Total additional space needed: 8.000000000000005 MB
+2024-01-29 17:33:13,031 - __main__ - INFO - New datafile /trcomdbn01/ora/data27/TCC011N/demo2_001.dbf successfully added to tablespace DEMO2
+2024-01-29 17:33:13,032 - __main__ - INFO - Successfully allocated 8.000000000000005 MB across mount points.
+2024-01-29 17:33:13,033 - __main__ - INFO - 32767 MB allocated to mount point /trcomdbn01/ora/data27
+2024-01-29 17:33:13,034 - __main__ - INFO - Collecting Recovery Area data ...
+2024-01-29 17:33:13,052 - __main__ - INFO - _datapoint:DatabaseAvailability:TCC011N Availability:status:1

@@ -1,0 +1,88 @@
+
+CCS021N:/apps/ora/home> adrci
+
+ADRCI: Release 12.1.0.2.0 - Production on Mon Aug 28 13:11:50 2023
+
+Copyright (c) 1982, 2014, Oracle and/or its affiliates.  All rights reserved.
+
+ADR base = "/chorddbn02/ora"
+
+
+
+adrci> show homes
+ADR Homes:
+diag/rdbms/ccslinux/CCSLINUX
+diag/rdbms/chordp/CCS021N
+diag/rdbms/ccs021n/CCS021N
+diag/rdbms/ccs021x/CCS021N
+diag/tnslsnr/upora69a/listener_chorddbprd
+diag/tnslsnr/upora69a/listener_chordprd
+diag/tnslsnr/unora2w0/listener_chorddbn02
+
+--set homepath
+adrci> set homepath diag/rdbms/ccs021n/CCS021N
+
+-create a adrci logical package for the period listed below
+--create logical package command created a package given the number 1
+--all references to this package will be called 1
+
+adrci> IPS CREATE PACKAGE TIME '2023-08-24 00:00:00' to '2023-08-24 06:00.00'
+Created package 1 based on time range 2023-08-24 00:00:00.000000 +01:00 to 2023-08-24 06:00:00.000000 +01:00, correlation level typical
+adrci>
+
+--create physical package using logical package 1
+adrci>  IPS GENERATE PACKAGE 1 IN /tmp
+Generated package 1 in file /tmp/IPSPKG_20230828131812_COM_1.zip, mode complete
+adrci>
+
+adrci>  IPS GENERATE PACKAGE 1 IN /tmp
+Generated package 1 in file /tmp/IPSPKG_20230828131812_COM_1.zip, mode complete
+adrci> ips get metadata from file /tmp/IPSPKG_20230828131812_COM_1.zip
+IPS metadata from file /tmp/IPSPKG_20230828131812_COM_1.zip:
+----------------------------------------------------------
+<?xml version="1.0" encoding="US-ASCII"?>
+<PACKAGE>
+    <PACKAGE_ID>1</PACKAGE_ID>
+    <PACKAGE_NAME>IPSPKG_20230828131812</PACKAGE_NAME>
+    <MODE>Complete</MODE>
+    <SEQUENCE>1</SEQUENCE>
+    <LAST_COMPLETE>1</LAST_COMPLETE>
+    <DATE>2023-08-28 13:31:34.255135 +01:00</DATE>
+    <ADR_BASE>/chorddbn02/ora</ADR_BASE>
+    <ADR_HOME>/chorddbn02/ora/diag/rdbms/ccs021n/CCS021N</ADR_HOME>
+    <PROD_NAME>rdbms</PROD_NAME>
+    <PROD_ID>ccs021n</PROD_ID>
+    <INST_ID>CCS021N</INST_ID>
+    <OCM_GUID/>
+    <OCM_ANNOTATION/>
+    <FINALIZED>1</FINALIZED>
+</PACKAGE>
+
+----------------------------------------------------------
+adrci>
+
+
+--Get a summary view of the package contents or incidents
+adrci> ips show package 1
+DETAILS FOR PACKAGE 1:
+   PACKAGE_ID             1
+   PACKAGE_NAME           IPSPKG_20230828131812
+   PACKAGE_DESCRIPTION
+   DRIVING_PROBLEM        N/A
+   DRIVING_PROBLEM_KEY    N/A
+   DRIVING_INCIDENT       N/A
+   DRIVING_INCIDENT_TIME  N/A
+   STATUS                 Generated (4)
+   CORRELATION_LEVEL      Typical (2)
+   PROBLEMS               0 main problems, 0 correlated problems
+   INCIDENTS              0 main incidents, 0 correlated incidents
+   INCLUDED_FILES         29
+   SEQUENCES              Last 1, last full 1, last base 0
+   UNPACKED               FALSE
+   CREATE_TIME            2023-08-28 13:18:12.400537 +01:00
+   UPDATE_TIME            N/A
+   BEGIN_TIME             2023-08-24 00:00:00.000000 +01:00
+   END_TIME               2023-08-24 06:00:00.000000 +01:00
+   FLAGS                  0
+adrci>
+
