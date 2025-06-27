@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<configuration>
+	<jmxConfigurator />
+
+	<property name="LOG_DIR" value="logs/" />
+    <property name="LOG_FILE_NAME" value="${project.artifactId}" />
+    
+	<appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+		<file>${LOG_DIR}${LOG_FILE_NAME}.log</file>
+		<rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+			<!-- monthly rollover -->
+			<fileNamePattern>${LOG_DIR}${LOG_FILE_NAME}.%d{yyyy-MM-dd_HH}.log</fileNamePattern>
+
+			<!-- keep x hours of logs -->
+			<maxHistory>2</maxHistory>
+		</rollingPolicy>
+
+		<encoder>
+			<pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n
+			</pattern>
+		</encoder>
+	</appender>
+	
+	<appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+		<encoder>
+			<pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+		</encoder>
+	</appender>
+    
+    <logger name="com.bskyb.cbs.nft.horus" level="INFO"/>
+    
+    <!-- Silence the warning on enum "Missing parameter metadata for %s, which declares implicit or synthetic parameters." -->
+    <logger name="org.hibernate.validator.internal.properties.javabean.JavaBeanExecutable" level="OFF"/>
+	
+	<root level="INFO">
+		<appender-ref ref="CONSOLE" />
+		<appender-ref ref="FILE" />
+	</root>
+</configuration>

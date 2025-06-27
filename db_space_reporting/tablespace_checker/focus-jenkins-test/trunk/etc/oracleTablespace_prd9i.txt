@@ -1,0 +1,6 @@
+#SID,CONNECTION STRING,USERNAME,PASSWORD,EXCLUDED TABLESPACES
+# N.B. Each EXCLUDED tablespace is ':' separated
+# N.B. A hash anywhere in a line will cause it to be skipped, blank lines will be skipped
+# PRD 
+
+CLICKP,(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=clickdbprd		)(PORT=2000))(CONNECT_DATA=(SID=CLICKP	))),FOCUS_PRD,F0cusPRD_Bskyb001,UNDOTBS:UNDOTBS1

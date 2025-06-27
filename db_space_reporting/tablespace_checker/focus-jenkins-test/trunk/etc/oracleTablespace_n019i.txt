@@ -1,0 +1,5 @@
+#SID,CONNECTION STRING,USERNAME,PASSWORD,EXCLUDED TABLESPACES
+# N.B. Each EXCLUDED tablespace is ':' separated
+# N.B. A hash anywhere in a line will cause it to be skipped, blank lines will be skipped
+# PTT 
+CLICKPP,(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=clickdbpp)(PORT=2010)))(CONNECT_DATA=(SERVICE_NAME=CLICKPP))),HP_DIAG,HP_DIAG_1234,UNDOTBS:UNDOTBS1

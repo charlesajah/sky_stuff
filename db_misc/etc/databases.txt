@@ -1,0 +1,18 @@
+#ENV (label to match Jenkins dropdown),connection string,<ignored free text>,username,password
+# N.B. A hash anywhere in a line will cause it to be skipped, blank lines will be skipped
+# The hp_diag user needs:
+#  1) CREATE DATABASE LINK chord USING 'chorddbptt/chordo' ;  if no public database link for that. Equivalent for N02. Needs *temporary* create database link privilege.
+#  2) GRANT select_catalog_role TO hp_diag ;
+#  3) GRANT EXECUTE ON dbms_workload_repository TO hp_diag ;  -- annoyingly, has to be granted as sys.
+#  4) CREATE GLOBAL TEMPORARY TABLE hp_diag.gtt_clob ( tmp_clob CLOB ) ON COMMIT DELETE ROWS ;
+#
+# Format of below is five separate fields comma delimited:
+#    JENKINS-NAME , SID , CONN , USER , PASSWORD
+# But beware that SID either has to map to an entry in tnsnames.ora on the client machine used for Jenkins job - if not it also needs to be the connect string, meaning connection string gets duplicated.
+#
+
+N01-CHORD,CHORDO,(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=chorddbptt)(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME=CHORDO))),DATAPROV,H6_vjZDKtrAmkj
+N02-CHORD,CCS021N,(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=chorddbn02)(PORT=1525)))(CONNECT_DATA=(SERVICE_NAME=CCS021N))),DATAPROV,H6_vjZDKtrAmkj
+N71-FUL,(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=onxfulbcdbn71)(PORT=1525))(ADDRESS=(PROTOCOL=TCP)(HOST=scefulbcdbn71)(PORT=1525))(CONNECT_DATA=(SERVER=POOLED)(SERVICE_NAME=FUL711N_RW))),(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=onxfulbcdbn71)(PORT=1525))(ADDRESS=(PROTOCOL=TCP)(HOST=scefulbcdbn71)(PORT=1525))(CONNECT_DATA=(SERVER=POOLED)(SERVICE_NAME=FUL711N_RW))),nft_n71_datafix,B0ntrag3rR3#622x28c
+N71-CMA,(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=onxcmabcdbn71)(PORT=1525))(ADDRESS=(PROTOCOL=TCP)(HOST=scecmabcdbn71)(PORT=1525))(CONNECT_DATA=(SERVER=POOLED)(SERVICE_NAME=CMA711N_RW))),(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=onxcmabcdbn71)(PORT=1525))(ADDRESS=(PROTOCOL=TCP)(HOST=scecmabcdbn71)(PORT=1525))(CONNECT_DATA=(SERVER=POOLED)(SERVICE_NAME=CMA711N_RW))),nft_n71_datafix,B0ntrag3rR3#622x28c
+

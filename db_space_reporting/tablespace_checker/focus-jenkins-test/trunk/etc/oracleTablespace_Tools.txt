@@ -1,0 +1,5 @@
+#SID,CONNECTION STRING,USERNAME,PASSWORD,EXCLUDED TABLESPACES
+# N.B. Each EXCLUDED tablespace is ':' separated
+# N.B. A hash anywhere in a line will cause it to be skipped, blank lines will be skipped
+# TOOLS
+CLR093D, (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=clrqudbd09)(PORT=1525))(CONNECT_DATA=(SID=CLR093D))),HP_DIAG,HP_DIAG_1234,UNDOTBS
