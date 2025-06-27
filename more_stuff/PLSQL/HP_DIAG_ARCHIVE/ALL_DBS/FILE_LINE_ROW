@@ -1,0 +1,4 @@
+create or replace TYPE         file_line_row AS OBJECT (
+    line_id NUMBER,
+    line_content VARCHAR2(4000)
+);

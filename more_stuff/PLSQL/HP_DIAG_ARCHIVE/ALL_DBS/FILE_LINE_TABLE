@@ -1,0 +1,1 @@
+create or replace TYPE         file_line_table AS TABLE OF file_line_row;

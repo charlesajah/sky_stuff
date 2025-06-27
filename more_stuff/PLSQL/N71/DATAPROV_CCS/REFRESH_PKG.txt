@@ -1,0 +1,512 @@
+create or replace PACKAGE            "REFRESH_PKG" IS
+/*
+|| Name : sm_refresh_pkg
+|| Type : Package
+|| Database : CUS711N_RW
+|| Schema : dataprov
+|| Author : Marcos Gibram Fonseca (for original procedure parallel_daily_load)
+|| Updated for new database Ian McDonald 20 Jul 20 
+|| Date : 09-Nov-2016
+|| Purpose : Called from Jenkins, every morning 5am or 6am - 
+||    Also run (with i_master_run => TRUE ) post environment refresh from ??
+|| Usage : 'exec dataprov.sm_refresh_pkg.main'
+||    Optional parameters:
+||       1) i_threads = number of simultaneous pool refresh jobs running at any one time. Default is 5.
+||       2) i_master_run = TRUE or FALSE. TRUE = master_run is typically only done once after each environment refresh from production. Default is FALSE = daily_run.
+|| Depends on : All driven by table dataprov.run_job_parallel_control. Spawns dbms_scheduler jobs.
+|| Documentation : https://confluence.bskyb.com/display/nonfuntst/Parallel+Data+Provision+Load
+|| Change History:
+||    12-Jan-2018 Andrew Fraser added public procedure p_slow for performance, will run in a separate cron.
+||    24-Feb-2017 Andrew Fraser added new private procedure p_act_cust_subs_triple.
+||    19-Dec-2016 Andrew Fraser bug fix, changed l_proc_date to global variable g_proc_date, causing static patyIdsForCase and partyIdsForPairCard to infinite loop because dependency on dynamic act_uk_cust.
+||    09-Nov-2016 Andrew Fraser initial version.
+||    19-JUL-2023 Stuart Mason changed code to run each pool as a separate job as we do in N01 and other databases.
+*/
+   PROCEDURE main ( i_threads IN NUMBER DEFAULT 2, i_master_run IN BOOLEAN DEFAULT FALSE ) ;
+   PROCEDURE p_rerun_failed ( i_stat_dyn IN VARCHAR2 , i_threads IN NUMBER DEFAULT 2 ) ;
+   PROCEDURE p_debug ( i_message IN VARCHAR2 ) ;
+   PROCEDURE pre_pool_build;
+   FUNCTION dependencies_done (i_deps IN dataprov.run_job_parallel_control.job_dependence%TYPE) RETURN varchar2;
+   FUNCTION dependencies_done (i_deps IN dataprov.run_job_parallel_control.job_dependence%TYPE, i_proc_date IN DATE) RETURN varchar2;   
+END refresh_pkg ;
+/
+
+create or replace PACKAGE BODY            "REFRESH_PKG" IS  
+
+g_parent_run_id NUMBER := dataprov.dp_test_refresh_seq.NEXTVAL ;
+g_proc_date DATE := SYSDATE ;
+
+PROCEDURE p_runJob ( i_jobName IN VARCHAR2 , i_pack_name IN VARCHAR2 ) IS
+BEGIN
+   dbms_scheduler.create_job (
+        job_name => 'P' || i_jobName
+      , job_type => 'STORED_PROCEDURE'
+      , job_action => i_pack_name || '.' || i_jobName
+      , enabled => TRUE
+      ) ;
+   UPDATE dataprov.run_job_parallel_control SET start_time = SYSDATE , paused = NULL WHERE job_name = i_jobName ;
+END p_runJob ;
+
+PROCEDURE p_debug ( i_message IN VARCHAR2 ) IS
+/*
+|| p_debug = private prodedure, parameters:
+||   1) i_message = text message to output. No default.
+|| Depends on table debug. DDL for that is:
+||   CREATE TABLE dataprov.debug ( message VARCHAR2(4000) , logTime DATE DEFAULT SYSDATE ) ;
+*/
+   --PRAGMA AUTONOMOUS_TRANSACTION ;
+BEGIN
+   -- INSERT INTO dataprov.debug ( message , logTime ) VALUES ( SUBSTR ( i_message , 1 , 4000 ) , SYSDATE ) ;
+   -- COMMIT ;
+   DBMS_OUTPUT.PUT_LINE ( TO_CHAR ( SYSDATE , 'HH24:MI:SS' ) || ' ' || SUBSTR ( i_message , 1 , 32000 ) ) ;
+END p_debug ;
+
+PROCEDURE p_start IS
+/*
+|| p_start = Private prodedure, no parameters.
+|| Runs initial preliminary steps, including a truncate of main dynamic dprov_accounts table.
+*/
+BEGIN
+   --DELETE FROM dataprov.dprov_accounts WHERE NVL ( test_alloc , 'x' ) NOT IN ( 'ACT_CUST_PPV_WITH_PIN' , 'ACT_CUST_AV_DTV' ) ;  -- AF 24-Aug-2017 for Archana
+   UPDATE dataprov.run_job_parallel_control SET end_time = NULL , start_time = NULL ;
+   COMMIT ;
+END p_start ;
+
+PROCEDURE pre_pool_build IS
+-- This code was originally called in CUSTOMERS_PKG.rebuild.
+-- The code has been separated out to allow the pool builds to be built using the same process
+-- on other databases such as Chordo. This will allow the standard failed job report to be run.
+-- SM 11-AUG-2023
+v_result varchar2(20);
+begin
+   prereq_pkg.digitalDatafix ;
+   prereq_pkg.customerDebt ;
+   prereq_pkg.rebuildCustomers(v_result) ;
+   if v_result = 'FAILED' then -- then try one more time
+    prereq_pkg.rebuildCustomers(v_result);
+    if v_result = 'FAILED' then -- You have had your second chance. create a job that fails to mark the event and then stop further processing.
+       DBMS_SCHEDULER.CREATE_JOB (
+        job_name                 =>  'PREBUILD_CUSTOMERS', 
+        job_type                 =>  'PLSQL_BLOCK',
+        job_action               =>  'BEGIN raise_application_error(-20111,''REBUILD_CUSTOMERS has failed twice. No Pools have been built.''); END;',
+        enabled => TRUE);
+     raise_application_error(-20111,'REBUILD_CUSTOMERS has failed twice');
+    end if;
+   end if; 
+end pre_pool_build;
+
+PROCEDURE p_rerun_failed ( i_stat_dyn IN VARCHAR2 , i_threads IN NUMBER DEFAULT 2 ) IS
+/*
+|| p_rerun_failed = private prodedure, parameters:
+||   1) i_stat_dyn = one of 'D' (dynamic pools), 'S' (static pools in daily refresh), 'M' (static pools in master refresh only). No default.
+||   2) i_threads = number of simultaneous pool refresh jobs running at any one time. Default is 2.
+|| Depends on : All driven by table dataprov.run_job_parallel_control. Spawns dbms_scheduler jobs.
+*/
+   l_load_type VARCHAR2(30) := 'PARALLEL' ;
+   l_remain NUMBER ;
+   l_job_run NUMBER ;
+   l_run_id NUMBER ;
+   l_sql VARCHAR2(4000) ;
+BEGIN
+   SELECT COUNT(*) INTO l_remain FROM dataprov.run_job_parallel_control WHERE start_time IS NULL AND stat_dyn = i_stat_dyn ;
+   logger.debug ( '1) l_remain is : ' || TO_CHAR ( l_remain ) ) ;
+   WHILE l_remain > 0
+   LOOP
+      -- Create cursor with candidate processes
+      FOR i IN (
+         SELECT a.job_name
+              , a.package_name AS pack_name
+         FROM dataprov.run_job_parallel_control a
+         WHERE a.start_time IS NULL
+         AND a.stat_dyn = i_stat_dyn
+         AND (   a.job_dependence IS NULL
+                 OR 'P' || a.job_dependence IN ( SELECT s.job_name
+                                                   FROM user_scheduler_job_run_details s
+                                                  WHERE s.actual_start_date >= g_proc_date )
+                 )
+         ORDER BY a.priority
+         )
+      LOOP
+         -- Verify limit of processes         
+         logger.debug ( '2) job_name is : ' || i.job_name || ' , pack_name is : ' || i.pack_name ) ;
+         DBMS_LOCK.SLEEP ( seconds => 1 ) ;
+         SELECT COUNT(*) INTO l_job_run
+           FROM (
+            SELECT 'P' || a.job_name FROM dataprov.run_job_parallel_control a WHERE a.stat_dyn = i_stat_dyn AND a.start_time IS NOT NULL
+                  MINUS 
+                 SELECT s.job_name FROM user_scheduler_job_run_details s WHERE s.log_date > g_proc_date
+                )
+         ;
+         logger.debug ( '3) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+         IF l_job_run >= 1
+         THEN
+            WHILE l_job_run = i_threads  -- define max concurrent processes
+            LOOP
+               DBMS_LOCK.SLEEP ( seconds => 5 ) ;
+               SELECT COUNT(*) INTO l_job_run
+               FROM ( SELECT 'P' || a.job_name FROM dataprov.run_job_parallel_control a WHERE a.stat_dyn = i_stat_dyn AND a.start_time IS NOT NULL
+                        MINUS 
+                      SELECT s.job_name FROM user_scheduler_job_run_details s WHERE s.log_date > g_proc_date ) ;
+               logger.debug ( '4) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+            END LOOP  ;
+         END IF  ;
+         -- Create and submit a job
+         l_run_id := dataprov.dp_test_refresh_seq.NEXTVAL ;
+         p_runJob ( i_jobName => i.job_name , i_pack_name => i.pack_name ) ;
+         UPDATE dataprov.run_job_parallel_control SET start_time = SYSDATE WHERE job_name = i.job_name ;
+         SELECT COUNT(*) INTO l_remain
+           FROM dataprov.run_job_parallel_control
+          WHERE start_time is NULL
+            AND stat_dyn = i_stat_dyn
+         ;
+         logger.debug ( '6) rows updated is : ' || TO_CHAR ( SQL%ROWCOUNT ) ) ;
+         COMMIT ;
+      END LOOP  ;
+      DBMS_LOCK.SLEEP ( seconds => 1 ) ;  -- 25-May-2017 Andrew Fraser to reduce executions of d3swg6x918483 (for i in sql above)
+   END LOOP  ;
+   -- Verify if all jobs have finished
+   SELECT COUNT(*) INTO l_job_run FROM user_scheduler_running_jobs WHERE ROWNUM < 2 ;
+   logger.debug ( '7) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+   WHILE l_job_run > 0
+   LOOP
+      DBMS_LOCK.SLEEP ( seconds => 10 ) ;
+      SELECT COUNT(*) INTO l_job_run FROM user_scheduler_running_jobs ;
+      logger.debug ( '8) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+   END LOOP ;
+   -- Update end_time on control table
+   UPDATE dataprov.run_job_parallel_control a
+      SET end_time = (
+          SELECT max(b.log_date)
+            FROM user_scheduler_job_run_details b
+           WHERE 'P'||a.job_name = b.job_name 
+             AND b.log_date  >= g_proc_date
+          )
+   ;
+   logger.debug ( '9) rows updated is : ' || TO_CHAR ( SQL%ROWCOUNT ) ) ;
+   COMMIT ;
+END p_rerun_failed ;
+
+
+
+PROCEDURE p_parallel_master_load ( i_stat_dyn IN VARCHAR2 , i_threads IN NUMBER DEFAULT 2 ) IS
+/*
+|| p_parallel_master_load = private prodedure, parameters:
+||   1) i_stat_dyn = one of 'D' (dynamic pools), 'S' (static pools in daily refresh), 'M' (static pools in master refresh only). No default.
+||   2) i_threads = number of simultaneous pool refresh jobs running at any one time. Default is 2.
+|| Depends on : All driven by table dataprov.run_job_parallel_control. Spawns dbms_scheduler jobs.
+*/
+   l_load_type VARCHAR2(30) := 'PARALLEL' ;
+   l_remain NUMBER ;
+   l_job_run NUMBER ;
+   l_run_id NUMBER ;
+   l_sql VARCHAR2(4000) ;
+BEGIN
+   logger.debug ( '0) g_proc_date is : ' || TO_CHAR ( g_proc_date , 'Dy DD-Mon-YYYY HH24:MI:SS' ) ) ;
+   logger.debug ( '0) i_stat_dyn is : ' || i_stat_dyn ) ;
+   logger.debug ( '0) i_threads is : ' || TO_CHAR ( i_threads ) ) ;
+   logger.debug ( '0) g_parent_run_id is : ' || TO_CHAR ( g_parent_run_id ) ) ;
+   SELECT COUNT(*) INTO l_remain FROM dataprov.run_job_parallel_control WHERE start_time IS NULL AND stat_dyn = i_stat_dyn ;
+   logger.debug ( '1) l_remain is : ' || TO_CHAR ( l_remain ) ) ;
+   WHILE l_remain > 0
+   LOOP
+      -- Create cursor with candidate processes
+      FOR i IN (
+         SELECT a.job_name
+              , CASE a.stat_dyn WHEN 'D' THEN 'dataprov.customers_pkg' ELSE 'dataprov.data_prep_static' END AS pack_name
+         FROM dataprov.run_job_parallel_control a
+         WHERE a.start_time IS NULL
+         AND a.stat_dyn = i_stat_dyn
+         AND (
+                    a.job_dependence IS NULL
+                 OR a.job_dependence IN (
+                       SELECT s.job_name
+                         FROM user_scheduler_job_run_details s
+                        WHERE s.actual_start_date >= g_proc_date
+                       )
+                 )
+         ORDER BY a.priority
+         )
+      LOOP
+         -- Verify limit of processes         
+         logger.debug ( '2) job_name is : ' || i.job_name || ' , pack_name is : ' || i.pack_name ) ;
+         DBMS_LOCK.SLEEP ( seconds => 1 ) ;
+         SELECT COUNT(*) INTO l_job_run
+           FROM (
+           SELECT 'P' || a.job_name FROM dataprov.run_job_parallel_control a WHERE a.stat_dyn = i_stat_dyn AND a.start_time IS NOT NULL
+                  MINUS 
+           SELECT s.job_name FROM user_scheduler_job_run_details s WHERE s.log_date > g_proc_date
+                )
+         ;
+         logger.debug ( '3) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+         IF l_job_run >= 1
+         THEN
+            WHILE l_job_run = i_threads  -- define max concurrent processes
+            LOOP
+               DBMS_LOCK.SLEEP ( seconds => 5 ) ;
+               SELECT COUNT(*) INTO l_job_run
+                 FROM (
+               SELECT 'P' || a.job_name FROM dataprov.run_job_parallel_control a WHERE a.stat_dyn = i_stat_dyn AND a.start_time IS NOT NULL
+                        MINUS 
+                       SELECT s.job_name FROM user_scheduler_job_run_details s WHERE s.log_date > g_proc_date
+                      )
+               ;
+               logger.debug ( '4) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+            END LOOP  ;
+         END IF  ;
+         -- Create and submit a job
+         l_run_id := dataprov.dp_test_refresh_seq.NEXTVAL ;
+         p_runJob ( i_jobName => i.job_name , i_pack_name => i.pack_name ) ;
+         UPDATE dataprov.run_job_parallel_control SET start_time = SYSDATE WHERE job_name = i.job_name ;
+         SELECT COUNT(*) INTO l_remain
+         FROM dataprov.run_job_parallel_control
+         WHERE start_time is NULL
+         AND stat_dyn = i_stat_dyn
+         ;
+         logger.debug ( '6) rows updated is : ' || TO_CHAR ( SQL%ROWCOUNT ) ) ;
+         COMMIT ;
+      END LOOP  ;
+      DBMS_LOCK.SLEEP ( seconds => 10 ) ;  -- 25-May-2017 Andrew Fraser to reduce executions of d3swg6x918483 (for i in sql above)
+   END LOOP  ;
+   -- Verify if all jobs have finished
+   SELECT COUNT(*) INTO l_job_run FROM user_scheduler_running_jobs WHERE ROWNUM < 2 ;
+   logger.debug ( '7) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+   WHILE l_job_run > 0
+   LOOP
+      DBMS_LOCK.SLEEP ( seconds => 10 ) ;
+      SELECT COUNT(*) INTO l_job_run FROM user_scheduler_running_jobs ;
+      logger.debug ( '8) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+   END LOOP ;
+   -- Update end_time on control table
+   UPDATE dataprov.run_job_parallel_control a
+      SET end_time = (
+          SELECT b.log_date
+            FROM user_scheduler_job_run_details b
+            --WHERE 'P' || a.job_name = b.job_name
+           WHERE 'P' || a.job_name = b.job_name
+             AND b.log_date  >= g_proc_date
+          )
+   ;
+   logger.debug ( '9) rows updated is : ' || TO_CHAR ( SQL%ROWCOUNT ) ) ;
+   COMMIT ;
+END p_parallel_master_load ;
+
+PROCEDURE p_parallel_daily_load ( i_stat_dyn IN VARCHAR2 DEFAULT 'S'  , i_threads IN NUMBER DEFAULT 2 ) IS
+/*
+|| p_parallel_daily_load = private prodedure, parameters:
+||   1) i_stat_dyn = one of 'D' (dynamic pools), 'S' (static pools in daily refresh), 'M' (static pools in master refresh only). 'T' for testing.
+||   2) i_threads = number of simultaneous pool refresh jobs running at any one time. Default is 2.
+|| Depends on : All driven by table dataprov.run_job_parallel_control. Spawns dbms_scheduler jobs.
+*/
+   l_load_type VARCHAR2(30) := 'PARALLEL' ;
+   l_remain NUMBER ;
+   l_job_run NUMBER ;
+   l_run_id NUMBER ;
+   l_sql VARCHAR2(4000) ;
+BEGIN
+   SELECT COUNT(*) INTO l_remain FROM dataprov.run_job_parallel_control WHERE start_time IS NULL AND stat_dyn = i_stat_dyn ;
+   WHILE l_remain > 0
+   LOOP
+      -- Create cursor with candidate processes
+      FOR i IN (
+         SELECT a.job_name, a.package_name AS pack_name
+         FROM dataprov.run_job_parallel_control a
+         WHERE a.start_time IS NULL
+         AND a.stat_dyn = i_stat_dyn
+         AND (    a.job_dependence IS NULL 
+               OR 'P' || a.job_dependence IN ( SELECT s.job_name
+                                                 FROM user_scheduler_job_run_details s
+                                                WHERE s.actual_start_date >= g_proc_date )
+             )
+         ORDER BY a.priority
+      )
+      LOOP
+         -- Verify limit of processes         
+         logger.debug ( '2) job_name is : ' || i.job_name || ' , pack_name is : ' || i.pack_name ) ;
+         DBMS_LOCK.SLEEP ( seconds => 1 ) ;
+         SELECT COUNT(*) INTO l_job_run
+           FROM ( SELECT 'P' || a.job_name FROM dataprov.run_job_parallel_control a WHERE a.stat_dyn = i_stat_dyn AND a.start_time IS NOT NULL
+                  MINUS 
+                  SELECT s.job_name FROM user_scheduler_job_run_details s WHERE s.log_date > g_proc_date ) ;
+                  
+         logger.debug ( '3) l_job_run (runnning jobs) is : ' || TO_CHAR ( l_job_run ) ) ;
+         IF l_job_run >= 1
+         THEN
+            WHILE l_job_run = i_threads  -- define max concurrent processes
+            LOOP
+               DBMS_LOCK.SLEEP ( seconds => 10 ) ;
+               SELECT COUNT(*) INTO l_job_run
+                 FROM ( SELECT 'P' || a.job_name FROM dataprov.run_job_parallel_control a WHERE a.stat_dyn = i_stat_dyn AND a.start_time IS NOT NULL
+                        MINUS 
+                        SELECT s.job_name FROM user_scheduler_job_run_details s WHERE s.log_date > g_proc_date ) ;
+               logger.debug ( '4) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+            END LOOP  ;
+         END IF  ;
+         -- Create and submit a job
+         p_runJob ( i_jobName => i.job_name , i_pack_name => i.pack_name ) ;
+         SELECT COUNT(*) INTO l_remain
+           FROM dataprov.run_job_parallel_control
+          WHERE start_time is NULL
+            AND stat_dyn = i_stat_dyn
+         ;
+         logger.debug ( '6) rows updated is : ' || TO_CHAR ( SQL%ROWCOUNT ) ) ;
+         COMMIT ;
+      END LOOP  ;
+      DBMS_LOCK.SLEEP ( seconds => 10 ) ;  -- 25-May-2017 Andrew Fraser to reduce executions of d3swg6x918483 (for i in sql above)
+   END LOOP  ;
+   -- Verify if all jobs have finished
+   SELECT COUNT(*) INTO l_job_run FROM user_scheduler_running_jobs WHERE ROWNUM < 2  and job_name like 'P%';  -- added for debug
+   logger.debug ( '7) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+   WHILE l_job_run > 0
+   LOOP
+      DBMS_LOCK.SLEEP ( seconds => 10 ) ;
+       SELECT COUNT(*) INTO l_job_run FROM user_scheduler_running_jobs WHERE ROWNUM < 2  and job_name like 'P%'; -- added for debug
+       logger.debug ( '8) l_job_run is : ' || TO_CHAR ( l_job_run ) ) ;
+   END LOOP ;
+   -- Update end_time on control table
+   UPDATE dataprov.run_job_parallel_control a
+      SET end_time = (
+          SELECT MAX(b.log_date)
+            FROM user_scheduler_job_run_details b
+            WHERE 'P' || a.job_name = b.job_name
+           -- WHERE a.job_name = b.job_name
+             AND b.log_date  >= g_proc_date
+          )
+   ;
+    logger.debug ( '9) rows updated is : ' || TO_CHAR ( SQL%ROWCOUNT ) ) ;
+   COMMIT ;
+END p_parallel_daily_load ;
+
+PROCEDURE main ( i_threads IN NUMBER DEFAULT 2 , i_master_run IN BOOLEAN DEFAULT FALSE )  IS
+/*
+|| main = Public prodedure, parameters
+||   1) i_threads = number of simultaneous pool refresh jobs running at any one time. Default is 2.
+||   2) i_master_run = TRUE or FALSE. TRUE = master_run is typically only done once after each environment refresh from production. Default is FALSE = daily_run.
+*/
+  l_failed number := 0;
+  l_stat_fail number := 0;
+BEGIN
+   p_start ;  -- prep sql, includes truncating dynamic pool table.
+   logger.debug ( 'p_start completed' ) ;
+   --
+   -- Run the prerequisite procedures origingally run via customer_pkg.rebuild_customers 
+   logger.debug ( 'pre_pool_build started' ) ;
+   REFRESH_PKG.pre_pool_build;   
+   --
+   -- uncomment to use parallel build activity with D & S at the same time
+   -- p_parallel_combined_daily_load ( i_threads => i_threads ) ;   
+   -- i_sts_dyn set to 'T' for testing. Also defaulted to 'T' in p_parallel_daily_load for testing
+   p_parallel_daily_load ( i_stat_dyn => 'S' , i_threads => i_threads ) ;  -- dynamic pools
+   logger.debug ( 'Dynamic p_parallel_daily_load completed' ) ;
+   logger.debug ( 'Checking for Failed jobs and re-run' ) ;
+   select count(distinct job_name)
+   into l_failed
+   from user_scheduler_job_log 
+   where status in ('FAILED' ,'STOPPED')
+   and log_date > g_proc_date; --(select min(start_time) from RUN_JOB_PARALLEL_CONTROL);
+
+   if l_failed > 0 then 
+     update RUN_JOB_PARALLEL_CONTROL
+        SET end_time = NULL , start_time = NULL
+      WHERE job_name in ( select job_name
+                            from RUN_JOB_PARALLEL_CONTROL 
+                           where stat_dyn = 'S'   
+                          START WITH job_name in ( select distinct substr(job_name,2,100) 
+                                                     from user_scheduler_job_log 
+                                                    where status in ('FAILED' ,'STOPPED')  
+                                                      and log_date > g_proc_date) 
+                          connect by prior job_name = job_dependence );
+     commit;
+
+     -- get count of pools needing rebuilt
+     select count(*)
+       into l_stat_fail 
+       from RUN_JOB_PARALLEL_CONTROL 
+      where start_time is NULL
+        and end_time is null
+        and stat_dyn = 'S'; 
+
+     if l_stat_fail > 0 then
+       p_rerun_failed ( i_stat_dyn => 'S' , i_threads => i_threads ) ;  -- dynamic pools
+     end if;
+     
+   end if ;   
+   logger.debug ( 'Completed failed job re-run' ) ;
+
+   --
+   IF i_master_run  -- non-default option, typically only done once after each environment refresh from production.
+   THEN
+      p_parallel_master_load ( i_stat_dyn => 'M' , i_threads => i_threads ) ;  -- static 'master-only' pools
+      logger.debug ( 'master_run completed' ) ;
+   END IF ;
+   logger.debug ( 'p_finish completed' ) ;
+EXCEPTION
+ WHEN OTHERS then
+  null; -- the failures will be caught by the failed job report.
+END main ;
+
+
+FUNCTION dependencies_done (i_deps IN dataprov.run_job_parallel_control.job_dependence%TYPE) RETURN varchar2
+
+as
+l_list varchar2(200) ;
+l_query varchar2(400);
+l_query2 varchar2(400);
+l_counter number;
+l_dependency_count number;
+
+TYPE job_t IS TABLE OF user_scheduler_job_run_details.job_name%type  index by pls_integer;
+l_job job_t;
+
+begin
+l_list := i_deps;
+if l_list is null then
+ return 'TRUE';
+end if;
+
+l_dependency_count := coalesce(length(l_list) - length(replace(l_list,',',null))+1, length(l_list), 0);
+l_query := q'#select count(distinct job_name) cnt from user_scheduler_job_run_details j where actual_start_date >= :l_date and status = 'SUCCEEDED' and job_name in  ('P#'||replace(l_list, ',', ''',''P')||q'#')#';
+execute immediate (l_query) into l_counter using g_proc_date;
+if l_counter = l_dependency_count then
+ return 'TRUE';
+else 
+ return 'FALSE';
+end if;
+
+
+end dependencies_done;
+
+FUNCTION dependencies_done (i_deps IN dataprov.run_job_parallel_control.job_dependence%TYPE, i_proc_date IN DATE ) RETURN varchar2
+
+as
+l_list varchar2(200) ;
+l_query varchar2(400);
+l_query2 varchar2(400);
+l_counter number;
+l_dependency_count number;
+l_proc_date date;
+
+TYPE job_t IS TABLE OF user_scheduler_job_run_details.job_name%type  index by pls_integer;
+l_job job_t;
+
+begin
+l_proc_date := i_proc_date;
+l_list := i_deps;
+if l_list is null then
+ return 'TRUE';
+end if;
+
+l_dependency_count := coalesce(length(l_list) - length(replace(l_list,',',null))+1, length(l_list), 0);
+l_query := q'#select count(distinct job_name) cnt from user_scheduler_job_run_details j where actual_start_date >= :l_date and status = 'SUCCEEDED' and job_name in  ('P#'||replace(l_list, ',', ''',''P')||q'#')#';
+execute immediate (l_query) into l_counter using l_proc_date;
+if l_counter = l_dependency_count then
+ return 'TRUE';
+else 
+ return 'FALSE';
+end if;
+
+
+end dependencies_done;
+
+
+END refresh_pkg ;
+/
