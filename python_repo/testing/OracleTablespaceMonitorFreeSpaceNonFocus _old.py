@@ -1,0 +1,490 @@
+
+print("Starting OracleTablespaceMonitorFreeSpaceNonFocus.py")  # Add this line at the beginning
+import oracledb
+import sys
+import os
+import platform
+import pdb
+import re
+import functools
+print (sys.path)
+from oraclemonitor import OracleMonitor
+from collections import Counter
+
+if sys.maxsize > 2147483647:
+
+  print("Running in 64-bit mode.")
+
+else:
+
+  print("Not running in 64-bit mode.")
+
+d = None  # default suitable for Linux
+if platform.system() == "Windows":
+    d = r"C:\oracle\product\instantclient_19_20"
+
+# Initialize the Oracle client
+oracledb.init_oracle_client(lib_dir=d)
+
+class OracleTablespaceMonitorFreeSpaceNonFocus(OracleMonitor):
+    QUERY_TIMEOUT = 30
+    LOGIN_TIMEOUT = 30
+
+    def __init__(self):
+        super().__init__()
+        self.min_percent = 3.0
+        self.tns=""
+        self.dns=""
+        self.host_val=""
+        self.port_val=0
+        self.service_val=""
+        self.user_val=""
+        self.pword_val=""
+        self.db_name=""
+        self.connection= None
+        self.additional_space_needed_mb= None
+        self.remaining_space_needed= None
+        self.space_allocations = {}  # Dictionary to keep track of allocations
+        self.tablespace_data = {}  # dictionary to store all tablespace OS Mount point data
+        #self.cursor= None
+        #self.rec_cursor = None
+        
+        
+
+    def handle_tablespaces(self, db, cursor):
+        
+        for row in cursor:
+            tablespace = row[0]
+            pct_free = row[3]
+            if not db.is_tablespace_excluded(tablespace):
+                check_value = self.min_percent if self.min_percent > 0.0 else db.get_percent()
+                if float(self.pct_free) < check_value:
+                    #print("The Pct_Free value is :",float(pct_free))
+                    print(f"_datapoint:DatabaseTablespace:{db.get_name()}_{tablespace}:freepct:{pct_free}")
+                    return tablespace, self.pct_free
+    def check_recovery_area(self, db, rec_area_cursor):
+        for row in self.rec_cursor:
+            f_type= row[0]
+            percent_space_used= row[1]
+            percent_space_reclaimable = row[2]
+            
+    def db_conn(self, db):
+        try:
+            #self.connection = oracledb.connect(user=self.user_val, password=self.pword_val, host=self.host_val, service_name=self.service_val, port=self.port_val)
+            print("user=",self.user_val," password=",self.pword_val," host=",self.host_val," service_name=",self.service_val, "port=",self.port_val)
+            self.connection = oracledb.connect(user=self.user_val, password=self.pword_val, dsn=db.get_name())
+        except oracledb.DatabaseError as error:
+            print("Database connection error encountered:", error)
+            db_available = 0 
+            #print(f"CONN ERROR: {str(error)}")
+            print("Conn Details are:" , self.host_val, self.port_val,self.service_val)
+            print(f"_datapoint:DatabaseAvailability:{db.get_name()} Availability:status:{db_available}")
+        
+        
+        
+
+    def process_database(self, db):
+        print(f"NOTE: Processing {db.get_name()}, tns={db.get_tns()} ...")
+        #print("Service name is :" , service_val)  
+        self.db_name=db.get_name()
+        dns=db.get_name()
+        self.user_val=db.get_username()
+        self.pword_val=db.get_password()
+        #print ("TNS String is:", dns)
+        #self.split_conn_string(dns,db)
+        
+        #self.db_conn
+        
+        try:
+            #self.connection = oracledb.connect(user=self.user_val, password=self.pword_val, host=self.host_val, service_name=self.service_val, port=self.port_val)
+            #The following Standalone connection works but will fail if i tried to add the timeout parameter
+            #connection = oracledb.connect(user=self.user_val, password=self.pword_val, dsn=db.get_name())
+            
+            #In order to be able to implement connection TIME_OUT i had to to use connection pooling as this is not avaiable with Standalone connections
+            pool = oracledb.create_pool(user=self.user_val, password=self.pword_val, dsn=db.get_name(),min=1, max=5, increment=1, timeout=self.LOGIN_TIMEOUT)
+            self.connection = pool.acquire()
+        except oracledb.DatabaseError as error:
+            print("Database connection error encountered:", error)
+            db_available = 0 
+            #print(f"CONN ERROR: {str(error)}")
+            #print("Conn Details are:" , self.host_val, self.port_val,self.service_val)
+            print(f"_datapoint:DatabaseAvailability:{db.get_name()} Availability:status:{db_available}")
+            return
+      
+       
+        #connection = oracledb.connect(user=u_name, password=pword, host=host_name, service_name=s_name) 
+                   
+        cursor = self.connection.cursor()
+        cursor.arraysize = 1000
+        db_available = 1          
+
+        try:
+            #print("Query contains something?")
+            cursor.execute(self.query)
+            print("Collecting Tablespace data ...")
+            #print(f"Checking value for db.get_percent() :{db.get_percent()}")
+            
+            for row in cursor:
+                tablespace = row[0]
+                tspace_size= row[2]
+                pct_free = row[3]
+                #print("Verifiying we have entered the Handle_Tablespace")
+                
+                if not db.is_tablespace_excluded(tablespace):
+                    cus_pct_free=db.get_percent()
+                    if cus_pct_free > 0.0:
+                        check_value=cus_pct_free
+                        
+                    else:
+                        check_value = self.min_percent if self.min_percent > 0.0 else db.get_percent()
+                    
+                                      
+
+                    if float(pct_free) < check_value:
+                        #print("The Pct_Free value is :",float(pct_free))
+                        #print("The Check value is :", check_value)
+                        print(f"_datapoint:DatabaseTablespace:{db.get_name()}_{tablespace}:freepct:{pct_free}")
+                        #self.add_datafiles(self, db,tablespace, pct_free, check_value, tspace_size)
+                        self.add_datafiles(db,tablespace, pct_free, check_value, tspace_size)
+                        
+        except Exception as e:
+            print(f"Tablespace Check Error: {str(e)}")
+            return
+            
+        print("Collecting Recovery Area data ...")
+        try:
+            cursor.execute("""select * from V$RECOVERY_AREA_USAGE""")  
+        except Exception as error:
+            print(f"V$RECOVERY_AREA_USAGE: {str(error)}")           
+            print(db.get_name(),":V$RECOVERY_AREA_USAGE is not available on 10g versions")
+            #adding a return clause here to terminally catch any error raised from trying to access V$RECOVERY_AREA_USAGE
+            #as this annoyingly kept going out of the scope of this local/inner try block to the outer try block as well
+            print(f"_datapoint:DatabaseAvailability:{db.get_name()} Availability:status:{db_available}")
+            return
+        for row in cursor:
+            f_type = row[0]
+            percent_space_used = row[1]
+            percent_space_reclaimable = row[2]                
+            if percent_space_used > 50.00:
+                print(f"_datapoint:FIleType:{f_type}:{db.get_name()}:%used:{percent_space_used}")
+                if percent_space_reclaimable > 0:
+                    print(f"_datapoint:FIleType:{f_type}:{db.get_name()}:%percent_space_reclaimable:{percent_space_reclaimable}")
+                
+            
+        
+                
+
+        cursor.close()
+            
+            #rec_cursor = connection.cursor()
+            #rec_cursor.arraysize = 1000
+            #rec_cursor.execute('select * from V$RECOVERY_AREA_USAGE')
+            
+            #for row in rec_cursor:
+                #self.f_type= row[0]
+                #self.percent_space_used= row[1]
+                #self.percent_space_reclaimable = row[2]
+                #if self.percent_space_used > 50.00:
+                    #print(f"FIle Type is {self.file_type} and  %Used is:{self.percent_space_used}")
+                    
+            #rec_cursor.close()
+
+        self.connection.close()
+        pool.close()
+        db_available = 1
+        print(f"_datapoint:DatabaseAvailability:{db.get_name()} Availability:status:{db_available}")
+        
+    def split_conn_string(self, dns, db):
+        print("Testing if split_conn_string was entered at all", dns)
+    
+        try:
+            # Define a case-insensitive regular expression pattern to match SERVICE_NAME
+            service_name_pattern = r"SERVICE_NAME=([a-zA-Z0-9_-]+)"
+    
+            # Use re.search with re.IGNORECASE to find the first case-insensitive SERVICE_NAME match
+            service_name_match = re.search(service_name_pattern, dns, re.IGNORECASE)
+    
+            if service_name_match:
+                # Extract the SERVICE_NAME value from the match
+                self.service_val = service_name_match.group(1)
+                
+                print("SERVICE_NAME Value:", self.service_val)
+                self.split_host_port(dns,db)
+                
+            else:
+                self.service_val=db.get_name()
+                print("Conn string has no given service_name so default Service_name is:", self.service_val)         
+                self.split_host_port(dns,db)
+                self.service_val=db.get_name()
+                           
+        except Exception as e:
+            print(f"Catching tns error: {str(e)}")
+    
+    def convert_to_megabytes(self, size_str):
+        units = {'B': 1 / (1024 ** 2), 'K': 1 / 1024, 'M': 1, 'G': 1024, 'T': 1024 ** 2}
+        size_str = size_str.upper()
+        unit = size_str[-1]
+        if unit in units:
+            return float(size_str[:-1]) * units[unit]
+        else:
+            return float(size_str)
+
+            
+    def process_datafile_mpoints(self, mpoint, mpoint_avail, tspace_name, max_allowable_space):
+        #print(f"Required space for {tspace_name} cannot fit into the mount point {mpoint}") 
+        print(f"Total additional space needed: {self.additional_space_needed_mb} MB")
+        
+
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT fsize, used, avail, use_pcent, mounted_on FROM dev.filesystem WHERE mounted_on LIKE '%/ora/data%'")
+
+            for row in cursor:
+                mp_size = self.convert_to_megabytes(row[0])
+                mp_used = self.convert_to_megabytes(row[1])
+                mp_avail = self.convert_to_megabytes(row[2])
+                os_mp = row[4]
+
+                entry = {
+                    'mountpoint': os_mp,
+                    'available_space': mp_avail,
+                    'mpoint_size': mp_size,
+                    'mpoint_used': mp_used,
+                }
+
+                self.tablespace_data[os_mp] = entry
+
+            #cursor.close()
+        except Exception as e:
+            print(f"Error querying filesystem: {e}")
+            return
+
+        for mpoint, data in self.tablespace_data.items():
+            max_allowable_space = data['mpoint_size'] * 0.95 - data['mpoint_used']
+            if max_allowable_space > 0 and self.remaining_space_needed > 0:
+                space_to_allocate = min(self.remaining_space_needed, max_allowable_space)
+                self.remaining_space_needed -= space_to_allocate
+                self.space_allocations[mpoint] = self.space_allocations.get(mpoint, 0) + space_to_allocate
+                self.tablespace_data[mpoint]['available_space'] -= space_to_allocate
+        
+        if self.remaining_space_needed > 0:
+            print(f"Unable to allocate the required {self.additional_space_needed_mb} MB; {self.remaining_space_needed} MB still needed.")
+        else:
+            print(f"Successfully allocated {self.additional_space_needed_mb} MB across mount points.")
+            for mpoint, allocated_space in self.space_allocations.items():
+                print(f"{allocated_space} MB allocated to mount point {mpoint}")
+        return self.remaining_space_needed
+            
+    def add_datafiles(self, db, tablespace, pct_free, check_value, tspace_size):
+        try:
+            cursor = self.connection.cursor()
+            cursor.arraysize = 1000
+        except Exception as e:
+            print(f"Catching function add_datafiles cursor error: {str(e)}")
+        
+        try:
+            # check if ASM is configured for the database
+            cursor.execute("""select count(*) from V$ASM_DISKGROUP""")
+        except Exception as e:
+            print(f"ASM verification query failed : {str(e)}")
+            return
+
+        entry1 = None  # Declare entry1
+
+        for row in cursor:
+            cnt = row[0]
+            if cnt == 0:
+                sql = (
+                    'SELECT '
+                    'ext.mounted_on, '
+                    'ext.fsize, '
+                    'ext.used, '
+                    'ext.Avail, '
+                    'ext.use_pcent, '
+                    'df.tablespace_name '
+                    'FROM  dev.filesystem ext '
+                    'JOIN   dba_data_files df '
+                    'ON '
+                    'REGEXP_LIKE (ext.mounted_on, SUBSTR(df.file_name, 1, INSTR(df.file_name, \'/\', -1, 2) - 1)) '
+                    'AND df.tablespace_name= :tspace '
+                    'AND df.autoextensible= :xtensible '
+                    'group by  df.tablespace_name,ext.mounted_on, '
+                    'ext.fsize, '
+                    'ext.used, '
+                    'ext.Avail, '
+                    'ext.use_pcent '
+                    'order by tablespace_name '
+                )
+
+                try:
+                    # query to find if space exists on OS mount points
+                    # it is good coding practice to use param binding in order to avoid SQL injection
+                    # we bind tablespace to tspace and NO to xtensible here
+                    cursor.execute(sql, {'tspace': tablespace, 'xtensible': 'NO'})
+                except Exception as e:
+                    print(f"Mountpoint verification query failed : {str(e)}")
+                    return
+                
+
+                # Calculate the additional space needed in megabytes to bring it level to required_min_free_pct
+                # and add 10% to the required_min_free_pct as a headroom
+                required_min_free_pct = check_value
+                #we calculate the minimum required space required to bring the tablespace level with the check_value
+                #and then we add 10% of the check_value on top of that as well
+                self.additional_space_needed_mb = max(0, (tspace_size * (required_min_free_pct / 100) - tspace_size * (pct_free / 100))) + 0.1 * (tspace_size * (required_min_free_pct / 100))
+                # Initialize variables to keep track of the remaining space needed and allocations
+                self.remaining_space_needed = self.additional_space_needed_mb
+
+                
+                mpoints_big_enough = {}  # New dictionary for storing OS mount points big enough to contain additional_space_needed_mb for a tablespace
+                one_to_many_mpoints = {}  # for storing OS Mount Points that map to more than one tablespace
+
+                for row in cursor:
+                    mpoint = row[0]
+                    mpoint_size = self.convert_to_megabytes(row[1])
+                    mpoint_used = self.convert_to_megabytes(row[2])
+                    mpoint_avail = self.convert_to_megabytes(row[3])  # Convert to megabytes
+                    mpoint_use_pcent = row[4]
+                    tspace_name = row[5]     
+
+                    # Check if there is no more space needed
+                    if self.remaining_space_needed <= 0:
+                        break  # Exit the loop as no more space allocation is needed
+
+                    max_allowable_space = mpoint_size * 0.95 - (mpoint_size - mpoint_avail)
+                    # Check if max_allowable_space is non-negative
+                    # Any value less than zero i.e. negative, indicates an existing utilisation of Mount Point beyond 95%
+                    if max_allowable_space >= 0:
+
+                        print (f"Max allowable space for mpoint {mpoint} is {max_allowable_space}")
+
+                        # Calculate the total space if additional space is added
+                        total_space_if_added = mpoint_used + self.additional_space_needed_mb
+
+                        if total_space_if_added <= max_allowable_space:
+                            entry_key = mpoint
+                            entry1 = {
+                                'tablespace': tspace_name,
+                                'mountpoint': mpoint,
+                                'available_space': mpoint_avail,
+                            }
+                            # Store the entry in the mpoints_big_enough dictionary
+                            mpoints_big_enough[entry_key] = entry1  # Use tspace_name as key
+
+                            
+                            # Check if mpoints_big_enough has entries
+                            if len(mpoints_big_enough) > 0:
+                                for key, entry1 in mpoints_big_enough.items():                                
+                                    print(
+                                        f"Tablespace {tablespace} requires {additional_space_needed_mb} MB of more space, "
+                                        f"and there is more than enough available space on mount point {entry1['mountpoint']} "
+                                    )
+
+                        else:
+                            self.process_datafile_mpoints(mpoint, mpoint_avail, tspace_name, max_allowable_space)
+                    else:
+                        self.process_datafile_mpoints(mpoint, mpoint_avail, tspace_name, max_allowable_space)
+                        
+                        
+
+        # I'd rather close connections from the calling method process_database
+        # self.connection is closed from process_database method anyway
+        # something to think about
+        cursor.close()
+
+
+    def split_host_port(self,dns,db):
+        # Define a case-insensitive regular expression pattern to match HOST
+        host_pattern = r"HOST=([a-zA-Z0-9.-]+)"
+        
+        # Use re.findall to find all case-insensitive HOST matches for HOST in the DNS string
+        host_matches = re.findall(host_pattern, dns, re.IGNORECASE)
+        # Use re.search with re.IGNORECASE to find the first case-insensitive HOST match
+        #host_match = re.search(host_pattern, dns, re.IGNORECASE)
+
+        if len(host_matches) > 1:
+            print("Hosts found in string", host_matches)
+            # Extract each HOST value from the string
+            for h in range(len(host_matches)):
+                self.host_val = host_matches[h]
+                print("Testing connection for HOST:", self.host_val)
+                
+                # Define a case-insensitive regular expression pattern to match PORT
+                port_pattern = r"PORT=(\d+)"
+                # Use re.search with re.IGNORECASE to find the first case-insensitive PORT match
+                port_match = re.search(port_pattern, dns, re.IGNORECASE)
+
+                if port_match:
+                    # Extract the PORT value from the match
+                    self.port_val = port_match.group(1)
+                    print("PORT Value:", self.port_val)
+                    self.db_conn(db)                    
+                else:
+                    print("PORT not found in the connection string.")
+                    
+        else:
+            print("No multiple hosts found in conn string")
+            self.host_val=host_matches[0]
+            # Define a case-insensitive regular expression pattern to match PORT
+            port_pattern = r"PORT=(\d+)"
+            # Use re.search with re.IGNORECASE to find the first case-insensitive PORT match
+            port_match = re.search(port_pattern, dns, re.IGNORECASE)
+
+            if port_match:
+                # Extract the PORT value from the match
+                self.port_val = port_match.group(1)
+                print("PORT Value:", self.port_val)
+                print("Conn details is : ", self.connection)
+                self.db_conn(db)
+                
+            else:
+                print("PORT not found in the connection string.")
+        
+        
+     
+        
+    def check_args(self, args):
+        if args is not None:
+            if len(args) > 0:
+                try:
+                    #pcent_input = args[3]
+                    #print("Printing raw value for -p: " , pcent_input)
+                    self.min_percent = float(args[1])
+                #except ValueError:
+                except Exception as e:
+                    #print("Invalid argument: Minimum free percent must be a valid floating-point number.")
+                    print("Floating error is :", e)
+                    return False
+        return True  # Return True when parsing is successful
+
+    def run(self):
+        print(f"NOTE: QUERY TIMEOUT      = {self.QUERY_TIMEOUT} seconds")
+        print(f"NOTE: CONNECTION TIMEOUT = {self.LOGIN_TIMEOUT} seconds")
+        args = sys.argv[1:]  # Get command-line arguments here
+        #print("The arguments:", args)
+        if self.check_args(args):
+            if self.populate():
+                print(f"NOTE: MINIMUM FREE PERCENT  = {self.min_percent}")
+                print("DEBUG: Number of databases being checked:", len(self.databases))
+                #print("The contents of the query file is :", self.query)
+                #for x in range(3):
+                for db in self.databases:  # Loop through the databases
+                    #print("DBName is:", db.get_name())
+                    
+                    #if isinstance(db, OracleDatabase):
+                    #print("db is an instance of OracleDatabase")
+                        
+                    #print("Service Name is: ", self.databases[0])
+                    #else:
+                    #print("Just confirming Object Types", type(self.handle_tablespaces))
+                    #print(callable(self.handle_tablespaces))         
+                    self.process_database(db)
+                    
+                    
+            else:
+                print("Failed to extract the command line aruguments into variables")
+
+if __name__ == "__main__":
+    oracle_monitor = OracleTablespaceMonitorFreeSpaceNonFocus()
+    #print("Entering run() method for main class.")
+    oracle_monitor.run()
